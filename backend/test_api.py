@@ -52,3 +52,32 @@ def test_analyze_dispatches_by_column_type():
     ).json()
     assert correlation["analysis"] == "correlation"
     assert correlation["r_squared"] > 0.7
+
+
+def test_upload_then_analyze_round_trip():
+    red_rows = [f"{10 + i},red" for i in range(12)]
+    blue_rows = [f"{50 + i},blue" for i in range(12)]
+    csv = "score,team\n" + "\n".join(red_rows + blue_rows)
+    upload = client.post("/api/upload", files={"file": ("scores.csv", csv, "text/csv")})
+    assert upload.status_code == 200
+    body = upload.json()
+    assert body["filename"] == "scores.csv"
+    assert body["row_count"] == 24
+
+    session = body["session_id"]
+    columns = client.get("/api/columns", params={"session": session}).json()
+    assert columns["categorical"] == ["team"]
+
+    result = client.post("/api/analyze", json={"session": session, "col_a": "team", "col_b": "score"}).json()
+    assert result["analysis"] == "group_comparison"
+    assert result["significant"] is True
+
+
+def test_upload_rejects_a_non_csv():
+    response = client.post("/api/upload", files={"file": ("image.png", b"\x89PNG\x00\x00\xff\xfe", "image/png")})
+    assert response.status_code == 400
+
+
+def test_unknown_session_is_404():
+    response = client.get("/api/columns", params={"session": "does-not-exist"})
+    assert response.status_code == 404

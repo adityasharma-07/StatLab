@@ -78,6 +78,19 @@ button:focus-visible {
   outline-offset: 2px;
 }
 
+.field-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.upload-link {
+  font-size: 0.8rem;
+  color: var(--accent-dark);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .analyze-button {
   font: inherit;
   font-weight: 600;

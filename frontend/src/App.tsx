@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { analyze, fetchColumns, fetchDatasets } from './api'
+import { analyze, fetchColumns, fetchDatasets, uploadCsv } from './api'
 import './App.css'
 import { columnOptions, describePair } from './columns'
 import { ColumnPickers } from './components/ColumnPickers'
@@ -7,8 +7,14 @@ import { DatasetPicker } from './components/DatasetPicker'
 import { ResultsPanel } from './components/ResultsPanel'
 import type { AnalyzeResponse, ColumnProfile, DataSource } from './types'
 
+interface Upload {
+  session: string
+  filename: string
+}
+
 function App() {
   const [datasets, setDatasets] = useState<string[]>([])
+  const [upload, setUpload] = useState<Upload | null>(null)
   const [source, setSource] = useState<DataSource>({})
   const [profile, setProfile] = useState<ColumnProfile | null>(null)
   const [colA, setColA] = useState('')
@@ -17,20 +23,36 @@ function App() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  // Switch to a data source: load its column profile and pick sensible
-  // default columns (a numeric one and a categorical one, when available).
+  // Show a data source's columns and pick sensible defaults
+  // (a numeric column and a categorical one, when available).
+  function showProfile(newSource: DataSource, newProfile: ColumnProfile) {
+    const options = columnOptions(newProfile)
+    const firstNumeric = options.find((option) => option.kind === 'numeric')
+    const firstCategorical = options.find((option) => option.kind === 'categorical')
+    setSource(newSource)
+    setProfile(newProfile)
+    setColA(firstNumeric?.name ?? options[0]?.name ?? '')
+    setColB(firstCategorical?.name ?? options[1]?.name ?? '')
+    setResult(null)
+  }
+
+  // Switch to a built-in dataset or back to a previously uploaded CSV.
   async function openSource(newSource: DataSource) {
     setError('')
-    setResult(null)
     try {
-      const newProfile = await fetchColumns(newSource)
-      const options = columnOptions(newProfile)
-      const firstNumeric = options.find((option) => option.kind === 'numeric')
-      const firstCategorical = options.find((option) => option.kind === 'categorical')
-      setSource(newSource)
-      setProfile(newProfile)
-      setColA(firstNumeric?.name ?? options[0]?.name ?? '')
-      setColB(firstCategorical?.name ?? options[1]?.name ?? '')
+      showProfile(newSource, await fetchColumns(newSource))
+    } catch (caught) {
+      setError(errorMessage(caught))
+    }
+  }
+
+  async function handleUpload(file: File) {
+    setError('')
+    try {
+      // The upload response already contains the column profile.
+      const response = await uploadCsv(file)
+      setUpload({ session: response.session_id, filename: response.filename })
+      showProfile({ session: response.session_id }, response)
     } catch (caught) {
       setError(errorMessage(caught))
     }
@@ -76,7 +98,14 @@ function App() {
 
       <section className="card">
         <div className="controls">
-          <DatasetPicker datasets={datasets} selected={source.dataset ?? ''} onSelect={(dataset) => openSource({ dataset })} />
+          <DatasetPicker
+            datasets={datasets}
+            selectedDataset={source.dataset ?? ''}
+            uploadedName={upload?.filename ?? ''}
+            onSelectDataset={(dataset) => openSource({ dataset })}
+            onSelectUpload={() => upload && openSource({ session: upload.session })}
+            onUpload={handleUpload}
+          />
           <ColumnPickers
             options={options}
             colA={colA}

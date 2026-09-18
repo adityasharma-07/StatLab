@@ -27,6 +27,12 @@ class ColumnProfile(BaseModel):
     row_count: int
 
 
+class UploadResponse(ColumnProfile):
+    """The column profile of an uploaded CSV, plus the id to refer to it later."""
+    session_id: str
+    filename: str
+
+
 # --- analyze ----------------------------------------------------------------
 
 class AnalyzeRequest(BaseModel):

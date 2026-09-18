@@ -17,6 +17,12 @@ export interface ColumnProfile {
   row_count: number
 }
 
+// The column profile of an uploaded CSV, plus the id to refer to it later.
+export interface UploadResponse extends ColumnProfile {
+  session_id: string
+  filename: string
+}
+
 // Where the data comes from: a built-in dataset or an uploaded CSV session.
 export interface DataSource {
   dataset?: string

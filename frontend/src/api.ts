@@ -1,6 +1,6 @@
 // All calls to the backend live here, so components never build URLs themselves.
 
-import type { AnalyzeRequest, AnalyzeResponse, ColumnProfile, DataSource, DatasetsResponse } from './types'
+import type { AnalyzeRequest, AnalyzeResponse, ColumnProfile, DataSource, DatasetsResponse, UploadResponse } from './types'
 
 // Empty in development (Vite proxies /api) and when FastAPI serves the built
 // frontend. Set VITE_API_BASE only if the API is deployed on a different host.
@@ -36,4 +36,12 @@ export async function analyze(request: AnalyzeRequest): Promise<AnalyzeResponse>
     body: JSON.stringify(request),
   })
   return readJson<AnalyzeResponse>(response)
+}
+
+export async function uploadCsv(file: File): Promise<UploadResponse> {
+  // Files are sent as multipart form data; the browser sets the Content-Type.
+  const form = new FormData()
+  form.append('file', file)
+  const response = await fetch(`${API_BASE}/api/upload`, { method: 'POST', body: form })
+  return readJson<UploadResponse>(response)
 }
