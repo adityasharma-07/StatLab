@@ -153,8 +153,74 @@ def dunn_pairwise(clean: pd.DataFrame, value_col: str, group_col: str) -> list[d
     return pairs
 
 
+def tukey_pairwise(group_names: list, groups: list[pd.Series]) -> list[dict]:
+    # Tukey's HSD: the standard follow-up to ANOVA (the parametric counterpart
+    # of Dunn's test). It compares every pair of group means and already
+    # adjusts its p-values for the number of comparisons.
+    p_values = stats.tukey_hsd(*groups).pvalue
+
+    pairs = []
+    for i in range(len(group_names)):
+        for j in range(i + 1, len(group_names)):
+            p_value = float(p_values[i][j])
+            pairs.append({
+                "group_a": str(group_names[i]),
+                "group_b": str(group_names[j]),
+                "p_value": p_value,
+                "significant": p_value < ALPHA,
+            })
+    return pairs
+
+
+def check_assumptions(group_names: list, groups: list[pd.Series]) -> dict:
+    """Check the two assumptions ANOVA relies on: normality and equal variance."""
+    # Shapiro-Wilk: tests whether one sample looks normally distributed.
+    # Its null hypothesis is "the data IS normal", so a SMALL p-value (< 0.05)
+    # is evidence AGAINST normality. ANOVA needs every group to be roughly normal.
+    normality = []
+    for name, values in zip(group_names, groups):
+        shapiro_p = float(stats.shapiro(values).pvalue)
+        normality.append({
+            "group": str(name),
+            "shapiro_p": shapiro_p,
+            "normal": shapiro_p > ALPHA,
+        })
+
+    # Levene's test: tests whether the groups have equal variances (similar
+    # spread). Same logic: a small p-value means the variances differ.
+    levene_p = float(stats.levene(*groups).pvalue)
+
+    return {
+        "normality": normality,
+        "levene_p": levene_p,
+        "equal_variance": levene_p > ALPHA,
+    }
+
+
+def explain_test_choice(assumptions: dict) -> str:
+    """A short human-readable reason for the ANOVA vs Kruskal-Wallis choice."""
+    non_normal = [item["group"] for item in assumptions["normality"] if not item["normal"]]
+
+    if not non_normal and assumptions["equal_variance"]:
+        return (
+            "All groups look normally distributed (Shapiro-Wilk p > 0.05) and have similar "
+            "variances (Levene p > 0.05), so one-way ANOVA is appropriate."
+        )
+
+    reasons = []
+    if non_normal:
+        reasons.append(f"data is non-normal in {', '.join(non_normal)} (Shapiro-Wilk p < 0.05)")
+    if not assumptions["equal_variance"]:
+        reasons.append("group variances are unequal (Levene p < 0.05)")
+    return f"ANOVA's assumptions don't hold: {' and '.join(reasons)}, so the non-parametric Kruskal-Wallis test was used."
+
+
 def run_group_comparison(df: pd.DataFrame, value_col: str, group_col: str) -> dict:
-    """Does a numeric measure differ across the groups of a categorical column?"""
+    """Does a numeric measure differ across the groups of a categorical column?
+
+    Checks ANOVA's assumptions first, then runs ANOVA if they hold or
+    Kruskal-Wallis if they don't.
+    """
     analysis = "group_comparison"
 
     missing = missing_columns(df, [value_col, group_col])
@@ -181,25 +247,50 @@ def run_group_comparison(df: pd.DataFrame, value_col: str, group_col: str) -> di
     if clean[value_col].nunique() < 2:
         return problem(analysis, "insufficient_data", f"Every value of '{value_col}' is identical, so there is nothing to compare.")
 
-    # 4. Kruskal-Wallis: non-parametric test for whether groups differ. It
-    #    compares RANKS rather than raw values, so it doesn't assume the data
-    #    is normally distributed (unlike ANOVA).
-    statistic, p_value = stats.kruskal(*groups)
+    # 4. Check assumptions BEFORE choosing the test. This is the heart of the app.
+    assumptions = check_assumptions(group_names, groups)
+    all_normal = all(item["normal"] for item in assumptions["normality"])
+    use_anova = all_normal and assumptions["equal_variance"]
+
+    if use_anova:
+        # One-way ANOVA: parametric test comparing group MEANS. More powerful
+        # than Kruskal-Wallis, but only valid when every group is roughly
+        # normal and the groups have similar variances.
+        test = "ANOVA"
+        statistic, p_value = stats.f_oneway(*groups)
+    else:
+        # Kruskal-Wallis: non-parametric test for whether groups differ. It
+        # compares RANKS rather than raw values, so it doesn't assume the data
+        # is normally distributed. Used when ANOVA's assumptions fail.
+        test = "Kruskal-Wallis"
+        statistic, p_value = stats.kruskal(*groups)
+
     significant = bool(p_value < ALPHA)
 
     # 5. Post-hoc only when the overall test is significant: if there's no
     #    evidence that ANY group differs, hunting for pairs is just fishing.
-    pairwise = dunn_pairwise(clean, value_col, group_col) if significant else []
+    #    Each test has its matching follow-up: Tukey for ANOVA, Dunn for KW.
+    pairwise = []
+    posthoc_test = None
+    if significant and use_anova:
+        posthoc_test = "Tukey HSD"
+        pairwise = tukey_pairwise(group_names, groups)
+    elif significant:
+        posthoc_test = "Dunn (Bonferroni-adjusted)"
+        pairwise = dunn_pairwise(clean, value_col, group_col)
 
     return {
         "status": "ok",
         "analysis": analysis,
         "value_col": value_col,
         "group_col": group_col,
-        "test": "Kruskal-Wallis",
+        "test": test,
+        "test_reason": explain_test_choice(assumptions),
+        "assumptions": assumptions,
         "statistic": float(statistic),
         "p_value": float(p_value),
         "significant": significant,
+        "posthoc_test": posthoc_test,
         "group_count": len(groups),
         "n": int(len(clean)),
         "pairwise": pairwise,

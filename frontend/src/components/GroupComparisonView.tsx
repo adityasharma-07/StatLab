@@ -1,5 +1,6 @@
 import { formatNumber, formatP } from '../format'
 import type { GroupComparisonResult } from '../types'
+import { AssumptionsPanel } from './AssumptionsPanel'
 import { BoxPlotChart } from './BoxPlotChart'
 import { PairwiseTable } from './PairwiseTable'
 import { Verdict } from './Verdict'
@@ -16,11 +17,13 @@ export function GroupComparisonView({ result }: GroupComparisonViewProps) {
     <>
       <Verdict significant={result.significant} headline={headline} detail={detail} />
 
+      <AssumptionsPanel result={result} />
+
       <BoxPlotChart result={result} />
 
       {result.pairwise.length > 0 && (
         <section>
-          <h3>Which groups differ?</h3>
+          <h3>Which groups differ? — {result.posthoc_test}</h3>
           <PairwiseTable pairs={result.pairwise} />
         </section>
       )}

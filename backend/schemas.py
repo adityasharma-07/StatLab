@@ -62,15 +62,30 @@ class PairwiseResult(BaseModel):
     significant: bool
 
 
+class NormalityCheck(BaseModel):
+    group: str
+    shapiro_p: float
+    normal: bool
+
+
+class Assumptions(BaseModel):
+    normality: list[NormalityCheck]
+    levene_p: float
+    equal_variance: bool
+
+
 class GroupComparisonResult(BaseModel):
     status: Literal["ok"]
     analysis: Literal["group_comparison"]
     value_col: str
     group_col: str
-    test: str
+    test: Literal["ANOVA", "Kruskal-Wallis"]
+    test_reason: str
+    assumptions: Assumptions
     statistic: float
     p_value: float
     significant: bool
+    posthoc_test: str | None
     group_count: int
     n: int
     pairwise: list[PairwiseResult]

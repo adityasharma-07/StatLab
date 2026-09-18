@@ -79,11 +79,52 @@ def test_overlapping_groups_are_not_significant():
     assert result["pairwise"] == []
 
 
+def test_normal_equal_variance_groups_choose_anova():
+    rng = np.random.default_rng(42)
+    df = make_groups({
+        "a": rng.normal(10, 2, 50),
+        "b": rng.normal(12, 2, 50),
+        "c": rng.normal(14, 2, 50),
+    })
+    result = engine.run_group_comparison(df, "value", "group")
+
+    assert result["test"] == "ANOVA"
+    assert all(item["normal"] for item in result["assumptions"]["normality"])
+    assert result["assumptions"]["equal_variance"] is True
+    assert result["significant"] is True
+    assert result["posthoc_test"] == "Tukey HSD"
+    assert len(result["pairwise"]) == 3
+
+
+def test_skewed_groups_choose_kruskal_wallis():
+    rng = np.random.default_rng(42)
+    df = make_groups({
+        "a": rng.exponential(1.0, 50),
+        "b": rng.exponential(2.0, 50),
+        "c": rng.exponential(4.0, 50),
+    })
+    result = engine.run_group_comparison(df, "value", "group")
+
+    assert result["test"] == "Kruskal-Wallis"
+    assert any(not item["normal"] for item in result["assumptions"]["normality"])
+    assert "non-normal" in result["test_reason"]
+
+
 def test_penguins_body_mass_by_species_known_answer(penguins):
     result = engine.run_group_comparison(penguins, "body_mass_g", "species")
 
     assert result["status"] == "ok"
+
+    # Adelie fails Shapiro-Wilk and Levene shows unequal variance, so the
+    # engine must recommend Kruskal-Wallis rather than ANOVA.
+    normality = {item["group"]: item for item in result["assumptions"]["normality"]}
+    assert normality["Adelie"]["normal"] is False
+    assert normality["Adelie"]["shapiro_p"] == pytest.approx(0.03, abs=0.015)
+    assert result["assumptions"]["levene_p"] == pytest.approx(0.006, abs=0.002)
+    assert result["assumptions"]["equal_variance"] is False
     assert result["test"] == "Kruskal-Wallis"
+    assert "Adelie" in result["test_reason"]
+
     assert result["statistic"] == pytest.approx(217.6, abs=0.1)
     assert result["p_value"] < 1e-40
     assert result["significant"] is True

@@ -148,6 +148,20 @@ button:focus-visible {
   font-size: 0.95rem;
 }
 
+.assumptions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 18px;
+  border-left: 4px solid var(--accent);
+  border-radius: 4px 10px 10px 4px;
+  background: #f4f4f1;
+}
+
+.assumptions-title {
+  font-weight: 700;
+}
+
 .notice {
   padding: 14px 16px;
   border-radius: 10px;

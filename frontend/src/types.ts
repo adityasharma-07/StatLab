@@ -52,15 +52,30 @@ export interface PairwiseResult {
   significant: boolean
 }
 
+export interface NormalityCheck {
+  group: string
+  shapiro_p: number
+  normal: boolean
+}
+
+export interface Assumptions {
+  normality: NormalityCheck[]
+  levene_p: number
+  equal_variance: boolean
+}
+
 export interface GroupComparisonResult {
   status: 'ok'
   analysis: 'group_comparison'
   value_col: string
   group_col: string
-  test: string
+  test: 'ANOVA' | 'Kruskal-Wallis'
+  test_reason: string
+  assumptions: Assumptions
   statistic: number
   p_value: number
   significant: boolean
+  posthoc_test: string | null
   group_count: number
   n: number
   pairwise: PairwiseResult[]
