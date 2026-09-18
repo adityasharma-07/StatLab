@@ -376,6 +376,75 @@ def run_chi_square(df: pd.DataFrame, col_a: str, col_b: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Numeric x numeric: correlation and linear regression
+# ---------------------------------------------------------------------------
+
+# Cap on how many points are sent to the browser for the scatter plot.
+MAX_SCATTER_POINTS = 500
+
+
+def run_correlation(df: pd.DataFrame, col_a: str, col_b: str) -> dict:
+    """Do two numeric columns move together? col_a is x, col_b is y."""
+    analysis = "correlation"
+
+    missing = missing_columns(df, [col_a, col_b])
+    if missing:
+        return problem(analysis, "invalid_columns", f"Column not found: {', '.join(missing)}")
+    for column in [col_a, col_b]:
+        if not is_numeric_column(df[column]):
+            return problem(analysis, "invalid_columns", f"'{column}' is not numeric.")
+
+    clean = df[[col_a, col_b]].dropna()
+    x = clean[col_a]
+    y = clean[col_b]
+
+    if len(clean) < MIN_GROUP_SIZE:
+        return problem(analysis, "insufficient_data", f"Need at least {MIN_GROUP_SIZE} rows with both values present (found {len(clean)}).")
+    if x.nunique() < 2 or y.nunique() < 2:
+        return problem(analysis, "insufficient_data", "A column with a single constant value can't be correlated with anything.")
+
+    # Pearson r: strength of the LINEAR relationship, from -1 to +1. Assumes
+    # roughly linear, roughly normal data and is sensitive to outliers.
+    pearson_r, pearson_p = stats.pearsonr(x, y)
+
+    # Spearman rho: the same idea computed on RANKS, so it captures any
+    # monotonic (consistently increasing/decreasing) relationship and is
+    # robust to outliers. If Pearson and Spearman disagree a lot, the
+    # relationship is probably non-linear or outlier-driven.
+    spearman_rho, spearman_p = stats.spearmanr(x, y)
+
+    # Simple linear regression: the best-fit line y = slope * x + intercept.
+    # R squared (r^2) is the share of y's variance that the line explains.
+    regression = stats.linregress(x, y)
+
+    # Large datasets are downsampled for plotting only; every statistic above
+    # was computed on all rows. A fixed seed keeps the picture stable.
+    plotted = clean
+    if len(clean) > MAX_SCATTER_POINTS:
+        plotted = clean.sample(n=MAX_SCATTER_POINTS, random_state=0)
+    points = [{"x": float(row_x), "y": float(row_y)} for row_x, row_y in zip(plotted[col_a], plotted[col_b])]
+
+    return {
+        "status": "ok",
+        "analysis": analysis,
+        "col_a": col_a,
+        "col_b": col_b,
+        "pearson_r": float(pearson_r),
+        "pearson_p": float(pearson_p),
+        "spearman_rho": float(spearman_rho),
+        "spearman_p": float(spearman_p),
+        "slope": float(regression.slope),
+        "intercept": float(regression.intercept),
+        "r_squared": float(regression.rvalue ** 2),
+        "significant": bool(pearson_p < ALPHA),
+        "strength": describe_strength(pearson_r),
+        "direction": "positive" if pearson_r > 0 else "negative",
+        "n": int(len(clean)),
+        "points": points,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Dispatcher: pick the analysis from the two columns' types
 # ---------------------------------------------------------------------------
 
@@ -412,5 +481,5 @@ def analyze(df: pd.DataFrame, col_a: str, col_b: str) -> dict:
     if kind_a == "categorical" and kind_b == "categorical":
         return run_chi_square(df, col_a, col_b)
 
-    # numeric + numeric: correlation (added in the next step).
-    return problem("correlation", "invalid_columns", "Numeric x numeric analysis is not available yet.")
+    # numeric + numeric: do the two measures move together?
+    return run_correlation(df, col_a, col_b)

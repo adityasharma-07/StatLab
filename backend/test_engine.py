@@ -225,3 +225,51 @@ def test_analyze_routes_two_categoricals_to_chi_square(tips):
 
 def test_analyze_rejects_same_column_twice(tips):
     assert engine.analyze(tips, "day", "day")["status"] == "invalid_columns"
+
+
+# --- correlation ------------------------------------------------------------
+
+def test_penguins_flipper_vs_body_mass_known_answer(penguins):
+    result = engine.run_correlation(penguins, "flipper_length_mm", "body_mass_g")
+
+    assert result["status"] == "ok"
+    assert result["pearson_r"] == pytest.approx(0.87, abs=0.01)
+    assert result["spearman_rho"] == pytest.approx(0.84, abs=0.01)
+    # 49.69 g per mm, using all 342 rows that have both measurements. (Dropping
+    # rows with ANY missing value, e.g. sex, leaves 333 rows and gives ~50.2.)
+    assert result["slope"] == pytest.approx(49.69, abs=0.05)
+    assert result["r_squared"] == pytest.approx(0.76, abs=0.01)
+    assert result["significant"] is True
+    assert result["direction"] == "positive"
+    assert len(result["points"]) == result["n"] == 342
+
+
+def test_unrelated_numbers_are_not_correlated():
+    rng = np.random.default_rng(5)
+    df = pd.DataFrame({"x": rng.normal(0, 1, 200), "y": rng.normal(0, 1, 200)})
+    result = engine.run_correlation(df, "x", "y")
+
+    assert result["significant"] is False
+    assert abs(result["pearson_r"]) < 0.2
+
+
+def test_large_dataset_is_downsampled_for_plotting_only():
+    rng = np.random.default_rng(6)
+    x = rng.normal(0, 1, 2000)
+    df = pd.DataFrame({"x": x, "y": 3 * x + rng.normal(0, 0.1, 2000)})
+    result = engine.run_correlation(df, "x", "y")
+
+    assert result["n"] == 2000                   # statistics use every row
+    assert len(result["points"]) == 500          # the scatter plot does not
+    assert result["slope"] == pytest.approx(3, abs=0.05)
+
+
+def test_constant_column_correlation_is_insufficient_data():
+    df = pd.DataFrame({"x": [1.0, 2.0, 3.0, 4.0], "y": [5.0] * 4})
+    result = engine.run_correlation(df, "x", "y")
+    assert result["status"] == "insufficient_data"
+
+
+def test_analyze_routes_two_numerics_to_correlation(penguins):
+    result = engine.analyze(penguins, "flipper_length_mm", "body_mass_g")
+    assert result["analysis"] == "correlation"

@@ -40,3 +40,15 @@ def test_analyze_bad_column_is_a_clean_message_not_a_500():
     response = client.post("/api/analyze", json={"dataset": "penguins", "col_a": "nope", "col_b": "species"})
     assert response.status_code == 200
     assert response.json()["status"] == "invalid_columns"
+
+
+def test_analyze_dispatches_by_column_type():
+    chi = client.post("/api/analyze", json={"dataset": "tips", "col_a": "day", "col_b": "time"}).json()
+    assert chi["analysis"] == "chi_square"
+    assert chi["dof"] == 3
+
+    correlation = client.post(
+        "/api/analyze", json={"dataset": "penguins", "col_a": "flipper_length_mm", "col_b": "body_mass_g"}
+    ).json()
+    assert correlation["analysis"] == "correlation"
+    assert correlation["r_squared"] > 0.7

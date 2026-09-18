@@ -106,5 +106,29 @@ export interface ChiSquareResult {
   expected: number[][]
 }
 
+export interface Point {
+  x: number
+  y: number
+}
+
+export interface CorrelationResult {
+  status: 'ok'
+  analysis: 'correlation'
+  col_a: string // x axis
+  col_b: string // y axis
+  pearson_r: number
+  pearson_p: number
+  spearman_rho: number
+  spearman_p: number
+  slope: number
+  intercept: number
+  r_squared: number
+  significant: boolean
+  strength: string
+  direction: 'positive' | 'negative'
+  n: number
+  points: Point[]
+}
+
 // The "analysis" field tells us which of these we received.
-export type AnalyzeResponse = GroupComparisonResult | ChiSquareResult | AnalysisProblem
+export type AnalyzeResponse = GroupComparisonResult | ChiSquareResult | CorrelationResult | AnalysisProblem

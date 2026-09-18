@@ -116,5 +116,29 @@ class ChiSquareResult(BaseModel):
     expected: list[list[float]]
 
 
+class Point(BaseModel):
+    x: float
+    y: float
+
+
+class CorrelationResult(BaseModel):
+    status: Literal["ok"]
+    analysis: Literal["correlation"]
+    col_a: str  # x axis
+    col_b: str  # y axis
+    pearson_r: float
+    pearson_p: float
+    spearman_rho: float
+    spearman_p: float
+    slope: float
+    intercept: float
+    r_squared: float
+    significant: bool
+    strength: str
+    direction: Literal["positive", "negative"]
+    n: int
+    points: list[Point]
+
+
 # The "analysis" field tells the frontend which of these it received.
-AnalyzeResponse = GroupComparisonResult | ChiSquareResult | AnalysisProblem
+AnalyzeResponse = GroupComparisonResult | ChiSquareResult | CorrelationResult | AnalysisProblem
