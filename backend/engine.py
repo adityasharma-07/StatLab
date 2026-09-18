@@ -63,8 +63,8 @@ def profile_columns(df: pd.DataFrame) -> dict:
     - numeric: columns with a numeric dtype (the things you can measure).
     - categorical: columns you can group by: text/bool columns, or numeric
       columns with only a few distinct values.
-    - excluded: columns that look categorical but can't be used as groups
-      (only 1 group, or too many groups). Flagged with a reason, not an error.
+    - excluded: columns that can't be analyzed (a single constant value, or a
+      text column with too many groups). Flagged with a reason, not an error.
     """
     numeric = []
     categorical = []
@@ -74,15 +74,16 @@ def profile_columns(df: pd.DataFrame) -> dict:
         series = df[column]
         distinct = int(series.nunique(dropna=True))
 
+        # A constant (or entirely empty) column can't show any relationship.
+        if distinct < 2:
+            excluded.append({"column": column, "reason": "fewer than 2 distinct values"})
+            continue
+
         if is_numeric_column(series):
             numeric.append(column)
             # A numeric column with few distinct values can ALSO act as a group.
-            if 2 <= distinct <= MAX_NUMERIC_CATEGORIES:
+            if distinct <= MAX_NUMERIC_CATEGORIES:
                 categorical.append(column)
-            continue
-
-        if distinct < 2:
-            excluded.append({"column": column, "reason": "fewer than 2 distinct values"})
         elif distinct > MAX_GROUPS:
             excluded.append({"column": column, "reason": f"too many groups ({distinct}) to compare"})
         else:
@@ -296,3 +297,120 @@ def run_group_comparison(df: pd.DataFrame, value_col: str, group_col: str) -> di
         "pairwise": pairwise,
         "groups": [summarize_group(str(name), values) for name, values in zip(group_names, groups)],
     }
+
+
+# ---------------------------------------------------------------------------
+# Categorical x categorical: chi-square test of independence
+# ---------------------------------------------------------------------------
+
+def describe_strength(value: float) -> str:
+    # Common rule-of-thumb labels (Cohen) for effect sizes on a 0-1 scale,
+    # used for both Cramér's V and the absolute correlation coefficient.
+    size = abs(value)
+    if size < 0.1:
+        return "negligible"
+    if size < 0.3:
+        return "weak"
+    if size < 0.5:
+        return "moderate"
+    return "strong"
+
+
+def run_chi_square(df: pd.DataFrame, col_a: str, col_b: str) -> dict:
+    """Are two categorical columns associated, or independent of each other?"""
+    analysis = "chi_square"
+
+    missing = missing_columns(df, [col_a, col_b])
+    if missing:
+        return problem(analysis, "invalid_columns", f"Column not found: {', '.join(missing)}")
+
+    clean = df[[col_a, col_b]].dropna()
+
+    # The contingency table counts how many rows fall into each combination of
+    # categories (e.g. day=Sat & time=Dinner). It's the input to the test and
+    # also what the frontend draws as a heatmap.
+    contingency = pd.crosstab(clean[col_a], clean[col_b])
+
+    if contingency.shape[0] < 2 or contingency.shape[1] < 2:
+        return problem(analysis, "insufficient_data", "Each column needs at least 2 categories (after dropping missing values).")
+    if max(contingency.shape) > MAX_GROUPS:
+        return problem(analysis, "insufficient_data", f"Too many categories to compare meaningfully (max {MAX_GROUPS} per column).")
+
+    # Chi-square test of independence: compares the OBSERVED counts with the
+    # counts we would EXPECT if the two columns were unrelated. A big gap
+    # between them (large chi2, small p) means the columns are associated.
+    # (For 2x2 tables scipy applies Yates' continuity correction by default.)
+    chi2, p_value, dof, expected = stats.chi2_contingency(contingency)
+
+    # Cramér's V: effect size for chi-square, from 0 (no association) to 1
+    # (perfect association). Needed because with enough rows even a trivial
+    # association gets a tiny p-value; V says how STRONG the association is.
+    n = int(contingency.to_numpy().sum())
+    cramers_v = float((chi2 / (n * (min(contingency.shape) - 1))) ** 0.5)
+
+    # The chi-square approximation is unreliable when expected counts are
+    # small. Rule of thumb: warn if more than 20% of cells expect fewer than 5.
+    low_expected_share = float((expected < 5).mean())
+
+    return {
+        "status": "ok",
+        "analysis": analysis,
+        "col_a": col_a,
+        "col_b": col_b,
+        "test": "Chi-square test of independence",
+        "chi2": float(chi2),
+        "p_value": float(p_value),
+        "dof": int(dof),
+        "significant": bool(p_value < ALPHA),
+        "cramers_v": cramers_v,
+        "strength": describe_strength(cramers_v),
+        "n": n,
+        "low_expected_warning": low_expected_share > 0.2,
+        "contingency": {
+            "rows": [str(label) for label in contingency.index],
+            "cols": [str(label) for label in contingency.columns],
+            "counts": contingency.to_numpy().tolist(),
+        },
+        "expected": expected.round(2).tolist(),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Dispatcher: pick the analysis from the two columns' types
+# ---------------------------------------------------------------------------
+
+def column_kind(series: pd.Series) -> str:
+    """'numeric' or 'categorical', using the same rule as profile_columns."""
+    if not is_numeric_column(series):
+        return "categorical"
+    # A numeric column with only a few distinct values (e.g. tips `size`)
+    # behaves like a set of groups, so treat it as categorical.
+    if series.nunique(dropna=True) <= MAX_NUMERIC_CATEGORIES:
+        return "categorical"
+    return "numeric"
+
+
+def analyze(df: pd.DataFrame, col_a: str, col_b: str) -> dict:
+    """Run the right analysis for a pair of columns, based on their types."""
+    missing = missing_columns(df, [col_a, col_b])
+    if missing:
+        return problem("none", "invalid_columns", f"Column not found: {', '.join(missing)}")
+    if col_a == col_b:
+        return problem("none", "invalid_columns", "Pick two different columns.")
+
+    kind_a = column_kind(df[col_a])
+    kind_b = column_kind(df[col_b])
+
+    # numeric + categorical (in either order): compare the numeric measure
+    # across the categorical column's groups.
+    if kind_a == "numeric" and kind_b == "categorical":
+        return run_group_comparison(df, value_col=col_a, group_col=col_b)
+    if kind_a == "categorical" and kind_b == "numeric":
+        return run_group_comparison(df, value_col=col_b, group_col=col_a)
+
+    # categorical + categorical: are the two sets of categories associated?
+    if kind_a == "categorical" and kind_b == "categorical":
+        return run_chi_square(df, col_a, col_b)
+
+    # numeric + numeric: correlation (added in the next step).
+    return problem("correlation", "invalid_columns", "Numeric x numeric analysis is not available yet.")

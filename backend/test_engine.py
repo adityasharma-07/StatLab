@@ -164,3 +164,64 @@ def test_all_null_column_is_insufficient_data():
 def test_unknown_column_is_reported_not_raised(penguins):
     result = engine.run_group_comparison(penguins, "no_such_column", "species")
     assert result["status"] == "invalid_columns"
+
+
+# --- chi-square -------------------------------------------------------------
+
+def test_tips_day_by_time_known_answer(tips):
+    result = engine.run_chi_square(tips, "day", "time")
+
+    assert result["status"] == "ok"
+    assert result["chi2"] == pytest.approx(217.1, abs=0.1)
+    assert result["p_value"] < 1e-40
+    assert result["dof"] == 3
+    assert result["significant"] is True
+    assert result["cramers_v"] == pytest.approx(0.94, abs=0.01)
+
+    # The heatmap data: weekends are dinner-only.
+    table = result["contingency"]
+    sat_row = table["counts"][table["rows"].index("Sat")]
+    assert sat_row[table["cols"].index("Lunch")] == 0
+    assert sat_row[table["cols"].index("Dinner")] == 87
+
+
+def test_independent_categories_are_not_significant():
+    rng = np.random.default_rng(3)
+    df = pd.DataFrame({
+        "coin": rng.choice(["heads", "tails"], 400),
+        "shirt": rng.choice(["red", "green", "blue"], 400),
+    })
+    result = engine.run_chi_square(df, "coin", "shirt")
+
+    assert result["status"] == "ok"
+    assert result["significant"] is False
+    assert result["cramers_v"] < 0.2
+
+
+def test_chi_square_with_one_category_is_insufficient_data():
+    df = pd.DataFrame({"a": ["x"] * 10, "b": ["y", "z"] * 5})
+    result = engine.run_chi_square(df, "a", "b")
+    assert result["status"] == "insufficient_data"
+
+
+# --- dispatcher -------------------------------------------------------------
+
+def test_analyze_routes_numeric_and_categorical_to_group_comparison(penguins):
+    result = engine.analyze(penguins, "body_mass_g", "species")
+    assert result["analysis"] == "group_comparison"
+
+    # Column order must not matter: the numeric column is always the value.
+    flipped = engine.analyze(penguins, "species", "body_mass_g")
+    assert flipped["analysis"] == "group_comparison"
+    assert flipped["value_col"] == "body_mass_g"
+    assert flipped["statistic"] == pytest.approx(result["statistic"])
+
+
+def test_analyze_routes_two_categoricals_to_chi_square(tips):
+    assert engine.analyze(tips, "day", "time")["analysis"] == "chi_square"
+    # `size` is numeric but low-cardinality, so it counts as categorical.
+    assert engine.analyze(tips, "size", "day")["analysis"] == "chi_square"
+
+
+def test_analyze_rejects_same_column_twice(tips):
+    assert engine.analyze(tips, "day", "day")["status"] == "invalid_columns"

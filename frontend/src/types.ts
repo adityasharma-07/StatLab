@@ -82,4 +82,29 @@ export interface GroupComparisonResult {
   groups: GroupSummary[]
 }
 
-export type AnalyzeResponse = GroupComparisonResult | AnalysisProblem
+export interface ContingencyTable {
+  rows: string[] // categories of col_a
+  cols: string[] // categories of col_b
+  counts: number[][] // counts[i][j] = rows with rows[i] and cols[j]
+}
+
+export interface ChiSquareResult {
+  status: 'ok'
+  analysis: 'chi_square'
+  col_a: string
+  col_b: string
+  test: string
+  chi2: number
+  p_value: number
+  dof: number
+  significant: boolean
+  cramers_v: number
+  strength: string
+  n: number
+  low_expected_warning: boolean
+  contingency: ContingencyTable
+  expected: number[][]
+}
+
+// The "analysis" field tells us which of these we received.
+export type AnalyzeResponse = GroupComparisonResult | ChiSquareResult | AnalysisProblem

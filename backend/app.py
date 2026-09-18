@@ -55,7 +55,8 @@ def get_columns(dataset: str | None = None, session: str | None = None):
 @app.post("/api/analyze", response_model=AnalyzeResponse)
 def post_analyze(request: AnalyzeRequest):
     df = get_dataframe(request.dataset, request.session)
-    return engine.run_group_comparison(df, value_col=request.col_a, group_col=request.col_b)
+    # The engine's dispatcher picks the analysis from the two columns' types.
+    return engine.analyze(df, request.col_a, request.col_b)
 
 
 # In production the built frontend is served from this same server, so the

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { analyze, fetchColumns, fetchDatasets } from './api'
 import './App.css'
-import { columnOptions } from './columns'
+import { columnOptions, describePair } from './columns'
 import { ColumnPickers } from './components/ColumnPickers'
 import { DatasetPicker } from './components/DatasetPicker'
 import { ResultsPanel } from './components/ResultsPanel'
@@ -63,6 +63,9 @@ function App() {
   }
 
   const options = profile ? columnOptions(profile) : []
+  const optionA = options.find((option) => option.name === colA)
+  const optionB = options.find((option) => option.name === colB)
+  const sameColumn = colA === colB
 
   return (
     <main className="page">
@@ -81,10 +84,12 @@ function App() {
             onChangeA={(column) => { setColA(column); setResult(null) }}
             onChangeB={(column) => { setColB(column); setResult(null) }}
           />
-          <button className="analyze-button" onClick={runAnalysis} disabled={!colA || !colB || loading}>
+          <button className="analyze-button" onClick={runAnalysis} disabled={!colA || !colB || sameColumn || loading}>
             {loading ? 'Analyzing…' : 'Analyze'}
           </button>
         </div>
+
+        {profile && <p className="pair-preview">{describePair(optionA, optionB)}</p>}
 
         {profile && (
           <p className="hint">

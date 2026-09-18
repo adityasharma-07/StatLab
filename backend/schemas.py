@@ -92,4 +92,29 @@ class GroupComparisonResult(BaseModel):
     groups: list[GroupSummary]
 
 
-AnalyzeResponse = GroupComparisonResult | AnalysisProblem
+class ContingencyTable(BaseModel):
+    rows: list[str]          # categories of col_a
+    cols: list[str]          # categories of col_b
+    counts: list[list[int]]  # counts[i][j] = rows with rows[i] and cols[j]
+
+
+class ChiSquareResult(BaseModel):
+    status: Literal["ok"]
+    analysis: Literal["chi_square"]
+    col_a: str
+    col_b: str
+    test: str
+    chi2: float
+    p_value: float
+    dof: int
+    significant: bool
+    cramers_v: float
+    strength: str
+    n: int
+    low_expected_warning: bool
+    contingency: ContingencyTable
+    expected: list[list[float]]
+
+
+# The "analysis" field tells the frontend which of these it received.
+AnalyzeResponse = GroupComparisonResult | ChiSquareResult | AnalysisProblem
