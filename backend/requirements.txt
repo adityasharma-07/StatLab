@@ -1,0 +1,14 @@
+# Engine
+pandas>=2.2
+scipy>=1.13
+scikit-posthocs>=0.9
+
+# API
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pydantic>=2.6
+python-multipart>=0.0.9
+
+# Tests
+pytest>=8.0
+httpx>=0.27
