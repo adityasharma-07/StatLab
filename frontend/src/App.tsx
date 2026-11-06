@@ -23,8 +23,7 @@ function App() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  // Show a data source's columns and pick sensible defaults
-  // (a numeric column and a categorical one, when available).
+  // Load a source's columns and default to a numeric + categorical pair.
   function showProfile(newSource: DataSource, newProfile: ColumnProfile) {
     const options = columnOptions(newProfile)
     const firstNumeric = options.find((option) => option.kind === 'numeric')
@@ -36,7 +35,7 @@ function App() {
     setResult(null)
   }
 
-  // Switch to a built-in dataset or back to a previously uploaded CSV.
+  // Switch between a built-in dataset and an uploaded CSV.
   async function openSource(newSource: DataSource) {
     setError('')
     try {
@@ -49,7 +48,7 @@ function App() {
   async function handleUpload(file: File) {
     setError('')
     try {
-      // The upload response already contains the column profile.
+      // The upload response already includes the column profile.
       const response = await uploadCsv(file)
       setUpload({ session: response.session_id, filename: response.filename })
       showProfile({ session: response.session_id }, response)
@@ -58,7 +57,7 @@ function App() {
     }
   }
 
-  // On first load: fetch the built-in dataset list and open the first one.
+  // On first load, fetch the dataset list and open the first one.
   useEffect(() => {
     async function start() {
       try {
@@ -92,8 +91,8 @@ function App() {
   return (
     <main className="page">
       <header className="page-header">
-        <h1>StatScope</h1>
-        <p>Pick a dataset and two columns. StatScope chooses the right statistical test, runs it, and shows the result.</p>
+        <h1>StatLab</h1>
+        <p>Pick a dataset and two columns. StatLab chooses the right statistical test, runs it, and shows the result.</p>
       </header>
 
       <section className="card">

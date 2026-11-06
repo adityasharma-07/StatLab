@@ -1,15 +1,9 @@
-"""Pydantic models: the typed JSON contract between the API and the frontend.
-
-The frontend mirrors these one-to-one as TypeScript interfaces
-(frontend/src/types.ts), so the data is typed end to end.
-"""
+"""Request and response models. Mirrored in frontend/src/types.ts."""
 
 from typing import Literal
 
 from pydantic import BaseModel
 
-
-# --- datasets and columns ---------------------------------------------------
 
 class DatasetsResponse(BaseModel):
     datasets: list[str]
@@ -28,23 +22,21 @@ class ColumnProfile(BaseModel):
 
 
 class UploadResponse(ColumnProfile):
-    """The column profile of an uploaded CSV, plus the id to refer to it later."""
+    """Column profile of an uploaded CSV, plus the id used to refer back to it."""
     session_id: str
     filename: str
 
 
-# --- analyze ----------------------------------------------------------------
-
 class AnalyzeRequest(BaseModel):
-    # Exactly one of these says where the data comes from.
-    dataset: str | None = None   # a built-in dataset name
-    session: str | None = None   # the id of an uploaded CSV
+    # Exactly one of these is set.
+    dataset: str | None = None
+    session: str | None = None
     col_a: str
     col_b: str
 
 
 class AnalysisProblem(BaseModel):
-    """Returned (with HTTP 200) when the engine can't analyze the chosen columns."""
+    """Returned with HTTP 200 when the chosen columns can't be analyzed."""
     status: Literal["insufficient_data", "invalid_columns"]
     analysis: str
     message: str

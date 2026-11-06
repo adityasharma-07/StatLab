@@ -1,6 +1,6 @@
 import type { Layout } from 'plotly.js'
 
-// Chart colors, shared by every chart so they read as one system.
+// Shared by every chart.
 export const CHART_COLORS = {
   primary: '#2a78d6', // main data marks
   secondary: '#eb6834', // a second series (the regression line)
@@ -11,8 +11,7 @@ export const CHART_COLORS = {
 
 const FONT_FAMILY = 'system-ui, -apple-system, "Segoe UI", sans-serif'
 
-// Layout settings every chart starts from: quiet grid and axes so the data
-// marks are the loudest thing on the chart.
+// Base layout every chart starts from.
 export function baseLayout(): Partial<Layout> {
   return {
     height: 380,

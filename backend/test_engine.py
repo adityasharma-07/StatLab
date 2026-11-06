@@ -1,4 +1,4 @@
-"""Engine tests. Fixtures are synthetic data or the bundled public datasets only."""
+"""Engine tests. Uses synthetic data and the bundled datasets."""
 
 import numpy as np
 import pandas as pd
@@ -8,7 +8,7 @@ import engine
 
 
 def make_groups(samples: dict) -> pd.DataFrame:
-    """Build a long-format frame from {"group name": array of values}."""
+    """Build a long-format frame from {name: values}."""
     frames = [pd.DataFrame({"group": name, "value": values}) for name, values in samples.items()]
     return pd.concat(frames, ignore_index=True)
 
@@ -23,7 +23,7 @@ def tips() -> pd.DataFrame:
     return engine.load_builtin("tips")
 
 
-# --- profile_columns --------------------------------------------------------
+# profile_columns
 
 def test_profile_columns_classifies_known_frame():
     df = pd.DataFrame({
@@ -48,7 +48,7 @@ def test_profile_columns_on_tips(tips):
     assert set(profile["categorical"]) == {"sex", "smoker", "day", "time", "size"}
 
 
-# --- group comparison -------------------------------------------------------
+# group comparison
 
 def test_clearly_different_groups_are_significant():
     rng = np.random.default_rng(0)
@@ -141,7 +141,7 @@ def test_penguins_body_mass_by_species_known_answer(penguins):
     assert medians["Gentoo"] > medians["Adelie"]
 
 
-# --- guards: bad input gives a status, never an exception -------------------
+# guards: bad input gives a status, never an exception
 
 def test_single_group_is_insufficient_data():
     df = pd.DataFrame({"value": [1.0, 2.0, 3.0, 4.0], "group": ["only"] * 4})
@@ -166,7 +166,7 @@ def test_unknown_column_is_reported_not_raised(penguins):
     assert result["status"] == "invalid_columns"
 
 
-# --- chi-square -------------------------------------------------------------
+# chi-square
 
 def test_tips_day_by_time_known_answer(tips):
     result = engine.run_chi_square(tips, "day", "time")
@@ -204,7 +204,7 @@ def test_chi_square_with_one_category_is_insufficient_data():
     assert result["status"] == "insufficient_data"
 
 
-# --- dispatcher -------------------------------------------------------------
+# dispatcher
 
 def test_analyze_routes_numeric_and_categorical_to_group_comparison(penguins):
     result = engine.analyze(penguins, "body_mass_g", "species")
@@ -227,7 +227,7 @@ def test_analyze_rejects_same_column_twice(tips):
     assert engine.analyze(tips, "day", "day")["status"] == "invalid_columns"
 
 
-# --- correlation ------------------------------------------------------------
+# correlation
 
 def test_penguins_flipper_vs_body_mass_known_answer(penguins):
     result = engine.run_correlation(penguins, "flipper_length_mm", "body_mass_g")

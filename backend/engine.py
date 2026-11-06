@@ -1,8 +1,6 @@
-"""StatScope statistics engine.
+"""Statistics engine. Takes a DataFrame and column names, returns plain dicts.
 
-Pure Python: pandas + scipy + scikit-posthocs. This file knows nothing about
-HTTP or FastAPI. Every function takes a DataFrame and column names and returns
-a plain dict, so it can be unit-tested (and reused) without a web server.
+No FastAPI imports here, so it can be tested without a server.
 """
 
 from pathlib import Path
@@ -14,58 +12,39 @@ from scipy import stats
 DATA_DIR = Path(__file__).parent / "data"
 BUILTIN_DATASETS = ["penguins", "tips"]
 
-# p-values below this are called "statistically significant" (the usual convention).
 ALPHA = 0.05
 
-# A numeric column with this many distinct values or fewer is treated as
-# categorical (e.g. party `size` in the tips dataset: 1-6).
+# A numeric column with few distinct values is really a grouping column,
+# e.g. party size in the tips dataset runs 1-6.
 MAX_NUMERIC_CATEGORIES = 10
 
-# A categorical column with more groups than this is too fragmented to compare.
+# More groups than this and the comparison stops being readable.
 MAX_GROUPS = 20
 
-# Each group needs at least this many values for the tests to be meaningful
-# (Shapiro-Wilk also requires n >= 3).
+# Shapiro-Wilk needs n >= 3.
 MIN_GROUP_SIZE = 3
 
-
-# ---------------------------------------------------------------------------
-# Datasets
-# ---------------------------------------------------------------------------
 
 def list_builtin_datasets() -> list[str]:
     return list(BUILTIN_DATASETS)
 
 
 def load_builtin(name: str) -> pd.DataFrame:
-    # The CSVs are snapshots of seaborn's public sample datasets, bundled in
-    # the repo so the app works offline. Missing values are NOT dropped here;
-    # each analysis drops nulls only for the two columns it actually uses.
     if name not in BUILTIN_DATASETS:
         raise ValueError(f"Unknown dataset: {name}")
+    # Nulls are left in; each analysis drops them for its own two columns.
     return pd.read_csv(DATA_DIR / f"{name}.csv")
 
 
-# ---------------------------------------------------------------------------
-# Column profiling
-# ---------------------------------------------------------------------------
-
 def is_numeric_column(series: pd.Series) -> bool:
-    # Booleans count as numeric in pandas, but True/False is really a category.
+    # pandas counts bools as numeric, but True/False is a category here.
     if pd.api.types.is_bool_dtype(series):
         return False
     return pd.api.types.is_numeric_dtype(series)
 
 
 def profile_columns(df: pd.DataFrame) -> dict:
-    """Classify each column so the frontend can offer sensible pickers.
-
-    - numeric: columns with a numeric dtype (the things you can measure).
-    - categorical: columns you can group by: text/bool columns, or numeric
-      columns with only a few distinct values.
-    - excluded: columns that can't be analyzed (a single constant value, or a
-      text column with too many groups). Flagged with a reason, not an error.
-    """
+    """Sort columns into numeric, categorical and unusable."""
     numeric = []
     categorical = []
     excluded = []
@@ -74,14 +53,12 @@ def profile_columns(df: pd.DataFrame) -> dict:
         series = df[column]
         distinct = int(series.nunique(dropna=True))
 
-        # A constant (or entirely empty) column can't show any relationship.
         if distinct < 2:
             excluded.append({"column": column, "reason": "fewer than 2 distinct values"})
             continue
 
         if is_numeric_column(series):
             numeric.append(column)
-            # A numeric column with few distinct values can ALSO act as a group.
             if distinct <= MAX_NUMERIC_CATEGORIES:
                 categorical.append(column)
         elif distinct > MAX_GROUPS:
@@ -97,13 +74,8 @@ def profile_columns(df: pd.DataFrame) -> dict:
     }
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
-
 def problem(analysis: str, status: str, message: str) -> dict:
-    # Every "can't analyze this" case returns the same small shape instead of
-    # raising, so the API never turns bad input into a 500 error.
+    # Returned instead of raising, so bad column choices don't become 500s.
     return {"status": status, "analysis": analysis, "message": message}
 
 
@@ -111,12 +83,7 @@ def missing_columns(df: pd.DataFrame, columns: list[str]) -> list[str]:
     return [column for column in columns if column not in df.columns]
 
 
-# ---------------------------------------------------------------------------
-# Numeric x categorical: group comparison
-# ---------------------------------------------------------------------------
-
 def summarize_group(name: str, values: pd.Series) -> dict:
-    # The five-number summary (+ mean) is exactly what a box plot draws.
     return {
         "name": name,
         "n": int(len(values)),
@@ -130,16 +97,13 @@ def summarize_group(name: str, values: pd.Series) -> dict:
 
 
 def dunn_pairwise(clean: pd.DataFrame, value_col: str, group_col: str) -> list[dict]:
-    # Dunn's test: the standard follow-up to Kruskal-Wallis. KW only says "at
-    # least one group differs"; Dunn's compares every pair to find WHICH ones.
-    # Bonferroni adjustment corrects for running many comparisons at once
-    # (otherwise some pairs would look significant purely by chance).
+    """Post-hoc for Kruskal-Wallis: which specific pairs of groups differ."""
+    # Bonferroni corrects for the number of pairs being tested at once.
     matrix = scikit_posthocs.posthoc_dunn(
         clean, val_col=value_col, group_col=group_col, p_adjust="bonferroni"
     )
 
-    # The result is a symmetric matrix; walk the upper triangle so each pair
-    # appears once.
+    # The matrix is symmetric, so only walk the upper triangle.
     names = list(matrix.index)
     pairs = []
     for i in range(len(names)):
@@ -155,9 +119,7 @@ def dunn_pairwise(clean: pd.DataFrame, value_col: str, group_col: str) -> list[d
 
 
 def tukey_pairwise(group_names: list, groups: list[pd.Series]) -> list[dict]:
-    # Tukey's HSD: the standard follow-up to ANOVA (the parametric counterpart
-    # of Dunn's test). It compares every pair of group means and already
-    # adjusts its p-values for the number of comparisons.
+    """Post-hoc for ANOVA. Tukey adjusts for multiple comparisons itself."""
     p_values = stats.tukey_hsd(*groups).pvalue
 
     pairs = []
@@ -174,10 +136,8 @@ def tukey_pairwise(group_names: list, groups: list[pd.Series]) -> list[dict]:
 
 
 def check_assumptions(group_names: list, groups: list[pd.Series]) -> dict:
-    """Check the two assumptions ANOVA relies on: normality and equal variance."""
-    # Shapiro-Wilk: tests whether one sample looks normally distributed.
-    # Its null hypothesis is "the data IS normal", so a SMALL p-value (< 0.05)
-    # is evidence AGAINST normality. ANOVA needs every group to be roughly normal.
+    """Test the two things ANOVA needs: normal groups and equal variances."""
+    # Both tests have a null of "the assumption holds", so p > alpha passes.
     normality = []
     for name, values in zip(group_names, groups):
         shapiro_p = float(stats.shapiro(values).pvalue)
@@ -187,8 +147,6 @@ def check_assumptions(group_names: list, groups: list[pd.Series]) -> dict:
             "normal": shapiro_p > ALPHA,
         })
 
-    # Levene's test: tests whether the groups have equal variances (similar
-    # spread). Same logic: a small p-value means the variances differ.
     levene_p = float(stats.levene(*groups).pvalue)
 
     return {
@@ -199,7 +157,7 @@ def check_assumptions(group_names: list, groups: list[pd.Series]) -> dict:
 
 
 def explain_test_choice(assumptions: dict) -> str:
-    """A short human-readable reason for the ANOVA vs Kruskal-Wallis choice."""
+    """Build the sentence shown in the UI explaining the chosen test."""
     non_normal = [item["group"] for item in assumptions["normality"] if not item["normal"]]
 
     if not non_normal and assumptions["equal_variance"]:
@@ -217,11 +175,7 @@ def explain_test_choice(assumptions: dict) -> str:
 
 
 def run_group_comparison(df: pd.DataFrame, value_col: str, group_col: str) -> dict:
-    """Does a numeric measure differ across the groups of a categorical column?
-
-    Checks ANOVA's assumptions first, then runs ANOVA if they hold or
-    Kruskal-Wallis if they don't.
-    """
+    """Compare a numeric column across the groups of a categorical column."""
     analysis = "group_comparison"
 
     missing = missing_columns(df, [value_col, group_col])
@@ -230,14 +184,12 @@ def run_group_comparison(df: pd.DataFrame, value_col: str, group_col: str) -> di
     if not is_numeric_column(df[value_col]):
         return problem(analysis, "invalid_columns", f"'{value_col}' is not numeric, so it can't be the measured value.")
 
-    # 1. Only drop rows that are null in the two columns we actually use.
     clean = df[[value_col, group_col]].dropna()
 
-    # 2. One array of values per group.
     group_names = sorted(clean[group_col].unique(), key=str)
     groups = [clean.loc[clean[group_col] == name, value_col] for name in group_names]
 
-    # 3. Guards: return a clear status instead of letting scipy raise.
+    # Catch the cases scipy would raise on, and explain them instead.
     if len(groups) < 2:
         return problem(analysis, "insufficient_data", f"'{group_col}' needs at least 2 groups to compare (found {len(groups)}).")
     if len(groups) > MAX_GROUPS:
@@ -248,29 +200,20 @@ def run_group_comparison(df: pd.DataFrame, value_col: str, group_col: str) -> di
     if clean[value_col].nunique() < 2:
         return problem(analysis, "insufficient_data", f"Every value of '{value_col}' is identical, so there is nothing to compare.")
 
-    # 4. Check assumptions BEFORE choosing the test. This is the heart of the app.
     assumptions = check_assumptions(group_names, groups)
     all_normal = all(item["normal"] for item in assumptions["normality"])
     use_anova = all_normal and assumptions["equal_variance"]
 
     if use_anova:
-        # One-way ANOVA: parametric test comparing group MEANS. More powerful
-        # than Kruskal-Wallis, but only valid when every group is roughly
-        # normal and the groups have similar variances.
         test = "ANOVA"
         statistic, p_value = stats.f_oneway(*groups)
     else:
-        # Kruskal-Wallis: non-parametric test for whether groups differ. It
-        # compares RANKS rather than raw values, so it doesn't assume the data
-        # is normally distributed. Used when ANOVA's assumptions fail.
         test = "Kruskal-Wallis"
         statistic, p_value = stats.kruskal(*groups)
 
     significant = bool(p_value < ALPHA)
 
-    # 5. Post-hoc only when the overall test is significant: if there's no
-    #    evidence that ANY group differs, hunting for pairs is just fishing.
-    #    Each test has its matching follow-up: Tukey for ANOVA, Dunn for KW.
+    # Only look for which pairs differ once the overall test says some pair does.
     pairwise = []
     posthoc_test = None
     if significant and use_anova:
@@ -299,13 +242,8 @@ def run_group_comparison(df: pd.DataFrame, value_col: str, group_col: str) -> di
     }
 
 
-# ---------------------------------------------------------------------------
-# Categorical x categorical: chi-square test of independence
-# ---------------------------------------------------------------------------
-
 def describe_strength(value: float) -> str:
-    # Common rule-of-thumb labels (Cohen) for effect sizes on a 0-1 scale,
-    # used for both Cramér's V and the absolute correlation coefficient.
+    """Cohen's rule-of-thumb labels for a 0-1 effect size."""
     size = abs(value)
     if size < 0.1:
         return "negligible"
@@ -317,7 +255,7 @@ def describe_strength(value: float) -> str:
 
 
 def run_chi_square(df: pd.DataFrame, col_a: str, col_b: str) -> dict:
-    """Are two categorical columns associated, or independent of each other?"""
+    """Test whether two categorical columns are associated."""
     analysis = "chi_square"
 
     missing = missing_columns(df, [col_a, col_b])
@@ -326,9 +264,7 @@ def run_chi_square(df: pd.DataFrame, col_a: str, col_b: str) -> dict:
 
     clean = df[[col_a, col_b]].dropna()
 
-    # The contingency table counts how many rows fall into each combination of
-    # categories (e.g. day=Sat & time=Dinner). It's the input to the test and
-    # also what the frontend draws as a heatmap.
+    # Counts per category combination: the test input and the heatmap data.
     contingency = pd.crosstab(clean[col_a], clean[col_b])
 
     if contingency.shape[0] < 2 or contingency.shape[1] < 2:
@@ -336,20 +272,13 @@ def run_chi_square(df: pd.DataFrame, col_a: str, col_b: str) -> dict:
     if max(contingency.shape) > MAX_GROUPS:
         return problem(analysis, "insufficient_data", f"Too many categories to compare meaningfully (max {MAX_GROUPS} per column).")
 
-    # Chi-square test of independence: compares the OBSERVED counts with the
-    # counts we would EXPECT if the two columns were unrelated. A big gap
-    # between them (large chi2, small p) means the columns are associated.
-    # (For 2x2 tables scipy applies Yates' continuity correction by default.)
     chi2, p_value, dof, expected = stats.chi2_contingency(contingency)
 
-    # Cramér's V: effect size for chi-square, from 0 (no association) to 1
-    # (perfect association). Needed because with enough rows even a trivial
-    # association gets a tiny p-value; V says how STRONG the association is.
+    # Effect size, since a large n makes even a trivial association significant.
     n = int(contingency.to_numpy().sum())
     cramers_v = float((chi2 / (n * (min(contingency.shape) - 1))) ** 0.5)
 
-    # The chi-square approximation is unreliable when expected counts are
-    # small. Rule of thumb: warn if more than 20% of cells expect fewer than 5.
+    # Chi-square gets unreliable when expected counts are small.
     low_expected_share = float((expected < 5).mean())
 
     return {
@@ -375,16 +304,12 @@ def run_chi_square(df: pd.DataFrame, col_a: str, col_b: str) -> dict:
     }
 
 
-# ---------------------------------------------------------------------------
-# Numeric x numeric: correlation and linear regression
-# ---------------------------------------------------------------------------
-
-# Cap on how many points are sent to the browser for the scatter plot.
+# Points beyond this are sampled down for the scatter plot only.
 MAX_SCATTER_POINTS = 500
 
 
 def run_correlation(df: pd.DataFrame, col_a: str, col_b: str) -> dict:
-    """Do two numeric columns move together? col_a is x, col_b is y."""
+    """Correlate two numeric columns and fit a line. col_a is x, col_b is y."""
     analysis = "correlation"
 
     missing = missing_columns(df, [col_a, col_b])
@@ -403,22 +328,15 @@ def run_correlation(df: pd.DataFrame, col_a: str, col_b: str) -> dict:
     if x.nunique() < 2 or y.nunique() < 2:
         return problem(analysis, "insufficient_data", "A column with a single constant value can't be correlated with anything.")
 
-    # Pearson r: strength of the LINEAR relationship, from -1 to +1. Assumes
-    # roughly linear, roughly normal data and is sensitive to outliers.
     pearson_r, pearson_p = stats.pearsonr(x, y)
 
-    # Spearman rho: the same idea computed on RANKS, so it captures any
-    # monotonic (consistently increasing/decreasing) relationship and is
-    # robust to outliers. If Pearson and Spearman disagree a lot, the
-    # relationship is probably non-linear or outlier-driven.
+    # Spearman runs on ranks, so a big gap from Pearson points to a
+    # non-linear or outlier-driven relationship.
     spearman_rho, spearman_p = stats.spearmanr(x, y)
 
-    # Simple linear regression: the best-fit line y = slope * x + intercept.
-    # R squared (r^2) is the share of y's variance that the line explains.
     regression = stats.linregress(x, y)
 
-    # Large datasets are downsampled for plotting only; every statistic above
-    # was computed on all rows. A fixed seed keeps the picture stable.
+    # Statistics above use every row; only the plot is downsampled.
     plotted = clean
     if len(clean) > MAX_SCATTER_POINTS:
         plotted = clean.sample(n=MAX_SCATTER_POINTS, random_state=0)
@@ -444,23 +362,17 @@ def run_correlation(df: pd.DataFrame, col_a: str, col_b: str) -> dict:
     }
 
 
-# ---------------------------------------------------------------------------
-# Dispatcher: pick the analysis from the two columns' types
-# ---------------------------------------------------------------------------
-
 def column_kind(series: pd.Series) -> str:
-    """'numeric' or 'categorical', using the same rule as profile_columns."""
+    """'numeric' or 'categorical', matching the rule in profile_columns."""
     if not is_numeric_column(series):
         return "categorical"
-    # A numeric column with only a few distinct values (e.g. tips `size`)
-    # behaves like a set of groups, so treat it as categorical.
     if series.nunique(dropna=True) <= MAX_NUMERIC_CATEGORIES:
         return "categorical"
     return "numeric"
 
 
 def analyze(df: pd.DataFrame, col_a: str, col_b: str) -> dict:
-    """Run the right analysis for a pair of columns, based on their types."""
+    """Pick and run the analysis that fits the two columns' types."""
     missing = missing_columns(df, [col_a, col_b])
     if missing:
         return problem("none", "invalid_columns", f"Column not found: {', '.join(missing)}")
@@ -470,16 +382,12 @@ def analyze(df: pd.DataFrame, col_a: str, col_b: str) -> dict:
     kind_a = column_kind(df[col_a])
     kind_b = column_kind(df[col_b])
 
-    # numeric + categorical (in either order): compare the numeric measure
-    # across the categorical column's groups.
     if kind_a == "numeric" and kind_b == "categorical":
         return run_group_comparison(df, value_col=col_a, group_col=col_b)
     if kind_a == "categorical" and kind_b == "numeric":
         return run_group_comparison(df, value_col=col_b, group_col=col_a)
 
-    # categorical + categorical: are the two sets of categories associated?
     if kind_a == "categorical" and kind_b == "categorical":
         return run_chi_square(df, col_a, col_b)
 
-    # numeric + numeric: do the two measures move together?
     return run_correlation(df, col_a, col_b)

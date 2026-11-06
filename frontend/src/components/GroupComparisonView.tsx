@@ -23,7 +23,7 @@ export function GroupComparisonView({ result }: GroupComparisonViewProps) {
 
       {result.pairwise.length > 0 && (
         <section>
-          <h3>Which groups differ? — {result.posthoc_test}</h3>
+          <h3>Which groups differ: {result.posthoc_test}</h3>
           <PairwiseTable pairs={result.pairwise} />
         </section>
       )}

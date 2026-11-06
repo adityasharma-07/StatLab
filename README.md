@@ -1,85 +1,57 @@
-# StatScope
+# StatLab
 
-**Pick a dataset and two columns — StatScope picks the right statistical test, checks its
-assumptions, runs it, and visualizes the result.**
+A web app for exploring a dataset two columns at a time. You pick a dataset and
+two columns, and it chooses the statistical test that fits those column types,
+runs it, and plots the result.
 
-Choosing the wrong test is one of the most common mistakes in applied statistics. StatScope encodes
-the decision an analyst would make: it looks at the *types* of the two columns to choose the
-analysis, and for group comparisons it *checks the assumptions* (normality, equal variance) before
-deciding between ANOVA and Kruskal-Wallis — and tells you why.
+The point is the test selection. For comparing a numeric column across groups it
+checks ANOVA's assumptions first (normality per group, equal variances) and falls
+back to Kruskal-Wallis when they fail, then shows which check decided it.
 
-![Group comparison: StatScope explains why it chose Kruskal-Wallis over ANOVA](docs/screenshot-group-comparison.png)
+![Group comparison](docs/screenshot-group-comparison.png)
 
-## What it does
+## What it runs
 
-| Column pair | Analysis | Visualization |
+| Columns | Test | Chart |
 |---|---|---|
-| numeric × categorical | **Assumption checks** (Shapiro-Wilk per group, Levene) → **one-way ANOVA** (+ Tukey HSD) if they hold, otherwise **Kruskal-Wallis** (+ Dunn's test, Bonferroni-adjusted) | Box plot per group + pairwise table |
-| categorical × categorical | **Chi-square test of independence** + **Cramér's V** effect size | Contingency heatmap |
-| numeric × numeric | **Pearson** and **Spearman** correlation + **linear regression** (slope, R²) | Scatter plot + fitted line |
+| numeric + categorical | ANOVA with Tukey HSD, or Kruskal-Wallis with Dunn's test | box plot per group |
+| categorical + categorical | chi-square test of independence, Cramer's V | contingency heatmap |
+| numeric + numeric | Pearson and Spearman correlation, linear regression | scatter plot with fit line |
 
-Those three pairings cover any two columns. Two public datasets (`penguins`, `tips`) are bundled so
-it works instantly, and you can upload your own CSV.
+A numeric column with 10 or fewer distinct values counts as categorical, so
+something like party size in the tips dataset groups properly.
 
-| Chi-square | Correlation |
-|---|---|
-| ![Chi-square heatmap](docs/screenshot-chi-square.png) | ![Correlation scatter plot](docs/screenshot-correlation.png) |
+Two datasets are bundled (penguins and tips) and you can upload your own CSV.
 
-## Architecture
+## Components
 
-Three layers, strictly separated:
+- `backend/engine.py` - the statistics. Plain functions taking a DataFrame and
+  column names, returning dicts. Imports no web code, so the tests run without a
+  server.
+- `backend/app.py` - FastAPI routes. Resolves which DataFrame a request means,
+  calls the engine, returns the result. No statistics here.
+- `backend/schemas.py` - Pydantic models for every request and response.
+- `frontend/src` - React and TypeScript. `types.ts` mirrors the Pydantic models.
+  The components branch on the result's `analysis` field to decide what to render.
+- `frontend/src/components` - one view per analysis type, plus the Plotly charts.
 
-```mermaid
-flowchart LR
-    UI["<b>Frontend</b><br/>React + Vite + TypeScript<br/>pickers, verdict, Plotly charts"]
-    API["<b>API</b><br/>FastAPI + Pydantic<br/>typed endpoints, no stats logic"]
-    ENGINE["<b>Engine</b><br/>pure Python: pandas, scipy,<br/>scikit-posthocs — no web code"]
-    UI -- "/api (typed JSON)" --> API -- "imports" --> ENGINE
-```
+Uploaded CSVs are held in memory and disappear when the server restarts.
 
-- **[backend/engine.py](backend/engine.py)** — all the statistics. Plain functions that take a
-  DataFrame and return a dict. It never imports FastAPI, so it is unit-tested without a server.
-- **[backend/app.py](backend/app.py)** — a thin translation layer: find the DataFrame, call the
-  engine, return JSON. Every response is validated by a Pydantic model in
-  [backend/schemas.py](backend/schemas.py).
-- **[frontend/src](frontend/src)** — a pure rendering client. [types.ts](frontend/src/types.ts)
-  mirrors the Pydantic models, so the contract is typed end to end. It branches on the result's
-  `analysis` field to render the right view.
+## Running it
 
-### How the test is chosen
+Needs Python 3.11+ and Node 20.19+.
 
-```
-analyze(df, col_a, col_b)
-├─ numeric + categorical ──► run_group_comparison
-│                             ├─ Shapiro-Wilk on every group  (are they normal?)
-│                             ├─ Levene                       (equal variances?)
-│                             ├─ both hold ──► ANOVA          ──► Tukey HSD post-hoc
-│                             └─ otherwise ──► Kruskal-Wallis ──► Dunn's post-hoc
-├─ categorical + categorical ─► run_chi_square   (chi-square + Cramér's V)
-└─ numeric + numeric ─────────► run_correlation  (Pearson, Spearman, linear regression)
-```
-
-A numeric column with ≤ 10 distinct values (like party `size` in `tips`) is treated as categorical.
-Bad input — one group, too few rows, an all-null or constant column — returns a clear
-`insufficient_data` / `invalid_columns` message instead of an error.
-
-## Run it
-
-Requires Python 3.11+ and Node 20.19+ (or 22.12+).
-
-**Backend** (from the repo root):
+Backend:
 
 ```bash
 cd backend
 python -m venv .venv
-.venv\Scripts\activate          # macOS/Linux: source .venv/bin/activate
+source .venv/bin/activate    # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 uvicorn app:app --reload
 ```
 
-The API is now at http://localhost:8000 — try it in the Swagger UI at http://localhost:8000/docs.
-
-**Frontend** (in a second terminal):
+Frontend, in a second terminal:
 
 ```bash
 cd frontend
@@ -87,42 +59,26 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:5173. The dev server proxies `/api` to the backend.
+The app is at http://localhost:5173 and the dev server proxies `/api` to the
+backend. API docs are at http://localhost:8000/docs.
 
-**Single-server mode** (what a deployment runs): build the frontend once with `npm run build`, and
-FastAPI serves `frontend/dist` itself — the whole app is then at http://localhost:8000.
+To run it as one server instead, build the frontend with `npm run build` and
+FastAPI will serve `frontend/dist` at http://localhost:8000.
 
-### Tests
+## Tests
 
 ```bash
 cd backend
 pytest
 ```
 
-31 tests: the engine is covered with synthetic data (known-significant, known-null, normal →
-ANOVA, skewed → Kruskal-Wallis, guards) and with known answers on the bundled datasets, plus API
-round-trip tests including CSV upload.
-
-| Known answer | Expected |
-|---|---|
-| penguins `body_mass_g` by `species` | Adelie fails Shapiro-Wilk (p ≈ 0.03), Levene p ≈ 0.006 → Kruskal-Wallis, H ≈ 217.6; Gentoo differs from both others, Adelie vs Chinstrap does not |
-| tips `day` × `time` | χ² ≈ 217.1, dof = 3, Cramér's V ≈ 0.94 |
-| penguins `flipper_length_mm` vs `body_mass_g` | Pearson r ≈ 0.87, Spearman ρ ≈ 0.84, slope ≈ 49.7 g/mm, R² ≈ 0.76 |
-
-## API
-
-| Endpoint | Purpose |
-|---|---|
-| `GET /api/datasets` | Names of the built-in datasets |
-| `GET /api/columns?dataset=penguins` (or `?session=<id>`) | Column profile: which columns are numeric / categorical / excluded |
-| `POST /api/upload` | Upload a CSV (multipart, ≤ 5 MB); returns a `session_id` plus its column profile |
-| `POST /api/analyze` | Body `{dataset \| session, col_a, col_b}` → the result, tagged with an `analysis` field |
-
-Uploads are held in memory only (no database) and disappear when the server restarts.
+31 tests. The engine is tested on synthetic data where the answer is known
+(clearly separated groups, identical groups, normal data that should pick ANOVA,
+skewed data that should pick Kruskal-Wallis) and against published values for the
+bundled datasets. The API tests cover the full round trip including CSV upload.
 
 ## Data
 
-`penguins` (Palmer Penguins; Gorman, Williams & Fraser 2014) and `tips` (Bryant & Smith 1995) are
-public sample datasets, bundled as CSV snapshots of the copies distributed with
-[seaborn](https://github.com/mwaskom/seaborn-data). All results shown come from running the real
-engine on this data.
+The penguins (Gorman, Williams and Fraser 2014) and tips (Bryant and Smith 1995)
+datasets are public samples, copied from
+[seaborn-data](https://github.com/mwaskom/seaborn-data).

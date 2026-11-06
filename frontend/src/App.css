@@ -1,4 +1,4 @@
-/* ---- page layout: one centered column of cards ---- */
+/* layout */
 
 .page {
   max-width: 880px;
@@ -34,7 +34,7 @@
   margin-bottom: 8px;
 }
 
-/* ---- controls ---- */
+/* controls */
 
 .controls {
   display: grid;
@@ -121,7 +121,7 @@ button:focus-visible {
   color: var(--text-muted);
 }
 
-/* ---- results ---- */
+/* results */
 
 .verdict {
   display: flex;
@@ -194,7 +194,7 @@ button:focus-visible {
   color: #8a1f1f;
 }
 
-/* ---- charts and tables ---- */
+/* charts and tables */
 
 .chart {
   margin: 0;

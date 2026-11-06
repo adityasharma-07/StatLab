@@ -7,9 +7,8 @@ export interface ColumnOption {
   kind: ColumnKind
 }
 
-// Every usable column, labeled with the type the engine will treat it as.
-// A low-cardinality numeric column (like tips "size") appears in BOTH of the
-// profile's lists; the engine treats it as categorical, so we label it that way.
+// A low-cardinality numeric column appears in both profile lists. The engine
+// treats it as categorical, so label it that way.
 export function columnOptions(profile: ColumnProfile): ColumnOption[] {
   const options: ColumnOption[] = []
   for (const name of profile.numeric) {
@@ -21,8 +20,7 @@ export function columnOptions(profile: ColumnProfile): ColumnOption[] {
   return options
 }
 
-// Preview which analysis a pair of columns will trigger. This mirrors the
-// routing in the engine's analyze() dispatcher (the engine has the final say).
+// Mirrors the routing in the engine's analyze(). The engine has the final say.
 export function describePair(a: ColumnOption | undefined, b: ColumnOption | undefined): string {
   if (!a || !b) return ''
   if (a.name === b.name) return 'Pick two different columns.'

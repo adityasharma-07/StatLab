@@ -1,5 +1,4 @@
-// TypeScript mirrors of the Pydantic models in backend/schemas.py.
-// Keep the two files in sync: together they are the typed API contract.
+// Mirrors the Pydantic models in backend/schemas.py. Keep the two in sync.
 
 export interface DatasetsResponse {
   datasets: string[]
@@ -17,13 +16,13 @@ export interface ColumnProfile {
   row_count: number
 }
 
-// The column profile of an uploaded CSV, plus the id to refer to it later.
+// Column profile of an uploaded CSV, plus the id used to refer back to it.
 export interface UploadResponse extends ColumnProfile {
   session_id: string
   filename: string
 }
 
-// Where the data comes from: a built-in dataset or an uploaded CSV session.
+// A built-in dataset or an uploaded CSV session.
 export interface DataSource {
   dataset?: string
   session?: string
@@ -136,5 +135,5 @@ export interface CorrelationResult {
   points: Point[]
 }
 
-// The "analysis" field tells us which of these we received.
+// The "analysis" field says which of these came back.
 export type AnalyzeResponse = GroupComparisonResult | ChiSquareResult | CorrelationResult | AnalysisProblem

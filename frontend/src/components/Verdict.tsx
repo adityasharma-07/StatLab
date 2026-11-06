@@ -4,8 +4,8 @@ interface VerdictProps {
   detail: string
 }
 
-// The big color-coded headline at the top of every result. The icon and the
-// wording carry the meaning too, so it never depends on color alone.
+// Headline at the top of every result. The icon and wording carry the
+// meaning too, so it doesn't rely on color alone.
 export function Verdict({ significant, headline, detail }: VerdictProps) {
   return (
     <div className={significant ? 'verdict verdict-significant' : 'verdict'}>
