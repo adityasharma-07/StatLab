@@ -8,10 +8,10 @@ interface HeatmapChartProps {
 }
 
 // One hue, light to dark: darker cell = more rows in that combination.
-const SEQUENTIAL_BLUES: [number, string][] = [
-  [0, '#e6f0fc'],
-  [0.5, '#5598e7'],
-  [1, '#0d366b'],
+const SEQUENTIAL_GREENS: [number, string][] = [
+  [0, '#f0ece0'],
+  [0.5, '#7a9a8c'],
+  [1, '#24463d'],
 ]
 
 export function HeatmapChart({ result }: HeatmapChartProps) {
@@ -24,7 +24,7 @@ export function HeatmapChart({ result }: HeatmapChartProps) {
     z: table.counts,
     // The expected counts ride along so the tooltip can show observed vs expected.
     customdata: result.expected,
-    colorscale: SEQUENTIAL_BLUES,
+    colorscale: SEQUENTIAL_GREENS,
     xgap: 2,
     ygap: 2,
     texttemplate: '%{z}', // print the count inside every cell

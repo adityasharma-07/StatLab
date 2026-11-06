@@ -2,14 +2,15 @@ import type { Layout } from 'plotly.js'
 
 // Shared by every chart.
 export const CHART_COLORS = {
-  primary: '#2a78d6', // main data marks
-  secondary: '#eb6834', // a second series (the regression line)
-  text: '#52514e',
-  grid: '#e1e0d9',
-  axis: '#c3c2b7',
+  primary: '#2f5d52', // main data marks
+  secondary: '#9a3f16', // a second series (the regression line)
+  primaryFill: 'rgba(47, 93, 82, 0.16)',
+  text: '#56523f',
+  grid: '#ddd9cb',
+  axis: '#b9b4a2',
 }
 
-const FONT_FAMILY = 'system-ui, -apple-system, "Segoe UI", sans-serif'
+const FONT_FAMILY = "'IBM Plex Sans', sans-serif"
 
 // Base layout every chart starts from.
 export function baseLayout(): Partial<Layout> {

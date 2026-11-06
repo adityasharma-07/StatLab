@@ -24,7 +24,7 @@ export function BoxPlotChart({ result }: BoxPlotChartProps) {
     mean: groups.map((group) => group.mean),
     marker: { color: CHART_COLORS.primary },
     line: { width: 2 },
-    fillcolor: 'rgba(42, 120, 214, 0.18)',
+    fillcolor: CHART_COLORS.primaryFill,
     showlegend: false,
   } as Data
 

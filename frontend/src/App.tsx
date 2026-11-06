@@ -92,10 +92,10 @@ function App() {
     <main className="page">
       <header className="page-header">
         <h1>StatLab</h1>
-        <p>Pick a dataset and two columns. StatLab chooses the right statistical test, runs it, and shows the result.</p>
+        <p>Pick a dataset and two columns. StatLab picks the analysis that fits them, runs it, and plots the result.</p>
       </header>
 
-      <section className="card">
+      <section className="controls-panel">
         <div className="controls">
           <DatasetPicker
             datasets={datasets}
@@ -117,21 +117,22 @@ function App() {
           </button>
         </div>
 
-        {profile && <p className="pair-preview">{describePair(optionA, optionB)}</p>}
-
         {profile && (
-          <p className="hint">
-            {profile.row_count} rows.
-            {profile.excluded.length > 0 &&
-              ` Not offered: ${profile.excluded.map((item) => `${item.column} (${item.reason})`).join(', ')}.`}
-          </p>
+          <div className="panel-footnotes">
+            <p className="pair-preview">{describePair(optionA, optionB)}</p>
+            <p className="hint">
+              {profile.row_count} rows.
+              {profile.excluded.length > 0 &&
+                ` Not offered: ${profile.excluded.map((item) => `${item.column} (${item.reason})`).join(', ')}.`}
+            </p>
+          </div>
         )}
       </section>
 
       {error && <div className="notice notice-error">{error}</div>}
 
       {result && (
-        <section className="card">
+        <section className="results">
           <ResultsPanel result={result} />
         </section>
       )}

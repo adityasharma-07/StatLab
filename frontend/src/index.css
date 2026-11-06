@@ -1,23 +1,29 @@
 :root {
   color-scheme: light;
 
-  --page: #f9f9f7;
-  --surface: #fcfcfb;
-  --border: rgba(11, 11, 11, 0.1);
-  --text: #0b0b0b;
-  --text-secondary: #52514e;
-  --text-muted: #898781;
+  /* Warm paper rather than pure white, so the charts sit on a tinted ground. */
+  --paper: #f3f1ea;
+  --surface: #fbfaf5;
+  --rule: #d8d4c6;
+  --rule-strong: #b9b4a2;
 
-  /* The one accent color: used for "significant" and for primary actions. */
-  --accent: #2a78d6;
-  --accent-dark: #1c5cab;
-  --accent-wash: #e6f0fc;
+  --ink: #15140f;
+  --ink-muted: #56523f;
+  --ink-faint: #8a8572;
 
-  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  /* One accent, used for the significant state and the primary button. */
+  --accent: #9a3f16;
+  --accent-dark: #7a3011;
+  --accent-wash: #efe4d9;
+
+  --sans: 'IBM Plex Sans', sans-serif;
+  --mono: 'IBM Plex Mono', monospace;
+
+  font-family: var(--sans);
   font-size: 16px;
-  line-height: 1.5;
-  color: var(--text);
-  background: var(--page);
+  line-height: 1.55;
+  color: var(--ink);
+  background: var(--paper);
 }
 
 * {
@@ -26,7 +32,7 @@
 
 body {
   margin: 0;
-  background: var(--page);
+  background: var(--paper);
 }
 
 h1,
@@ -34,4 +40,10 @@ h2,
 h3,
 p {
   margin: 0;
+}
+
+/* Numbers line up in columns when every digit is the same width. */
+.number {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
 }
