@@ -1,11 +1,8 @@
 # StatLab
 
-A web app for exploring a dataset two columns at a time. You pick a dataset and
-two columns, and it chooses the statistical test that fits those column types,
-runs it, and plots the result.
-
-It profiles the columns first, so it knows which are numeric and which work as
-groups, and uses that to decide what to run and how to plot it.
+A web app for exploring a dataset two columns at a time. It profiles every
+column as numeric or categorical, picks the analysis that fits the pair you
+select, runs it, and plots the result.
 
 ![Group comparison](docs/screenshot-group-comparison.png)
 
@@ -41,11 +38,12 @@ Two datasets are bundled (penguins and tips) and you can upload your own CSV.
   The components branch on the result's `analysis` field to decide what to render.
 - `frontend/src/components` - one view per analysis type, plus the Plotly charts.
 
-Uploaded CSVs are held in memory and disappear when the server restarts.
+Uploaded CSVs are capped at 5 MB, held in memory, and disappear when the
+server restarts.
 
 ## Running it
 
-Needs Python 3.11+ and Node 20.19+.
+Needs Python 3.12+ and Node 20.19+.
 
 Backend:
 
@@ -79,8 +77,8 @@ pytest
 ```
 
 31 tests. The engine is tested on synthetic data where the answer is known
-(clearly separated groups, identical groups, a known slope) and against published
-values for the bundled datasets. The API tests cover the full round trip
+(clearly separated groups, identical groups, a known slope) and against known
+reference values for the bundled datasets. The API tests cover the full round trip
 including CSV upload.
 
 ## Data
