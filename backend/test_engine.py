@@ -62,7 +62,7 @@ def test_clearly_different_groups_are_significant():
     assert result["status"] == "ok"
     assert result["significant"] is True
     assert result["group_count"] == 3
-    assert len(result["pairwise"]) == 3
+    assert [group["name"] for group in result["groups"]] == ["high", "low", "mid"]
 
 
 def test_overlapping_groups_are_not_significant():
@@ -76,10 +76,10 @@ def test_overlapping_groups_are_not_significant():
 
     assert result["status"] == "ok"
     assert result["significant"] is False
-    assert result["pairwise"] == []
+    assert result["p_value"] > 0.05
 
 
-def test_normal_equal_variance_groups_choose_anova():
+def test_group_comparison_always_uses_kruskal_wallis():
     rng = np.random.default_rng(42)
     df = make_groups({
         "a": rng.normal(10, 2, 50),
@@ -88,43 +88,16 @@ def test_normal_equal_variance_groups_choose_anova():
     })
     result = engine.run_group_comparison(df, "value", "group")
 
-    assert result["test"] == "ANOVA"
-    assert all(item["normal"] for item in result["assumptions"]["normality"])
-    assert result["assumptions"]["equal_variance"] is True
-    assert result["significant"] is True
-    assert result["posthoc_test"] == "Tukey HSD"
-    assert len(result["pairwise"]) == 3
-
-
-def test_skewed_groups_choose_kruskal_wallis():
-    rng = np.random.default_rng(42)
-    df = make_groups({
-        "a": rng.exponential(1.0, 50),
-        "b": rng.exponential(2.0, 50),
-        "c": rng.exponential(4.0, 50),
-    })
-    result = engine.run_group_comparison(df, "value", "group")
-
     assert result["test"] == "Kruskal-Wallis"
-    assert any(not item["normal"] for item in result["assumptions"]["normality"])
-    assert "non-normal" in result["test_reason"]
+    assert result["significant"] is True
+    assert result["group_count"] == 3
 
 
 def test_penguins_body_mass_by_species_known_answer(penguins):
     result = engine.run_group_comparison(penguins, "body_mass_g", "species")
 
     assert result["status"] == "ok"
-
-    # Adelie fails Shapiro-Wilk and Levene shows unequal variance, so the
-    # engine must recommend Kruskal-Wallis rather than ANOVA.
-    normality = {item["group"]: item for item in result["assumptions"]["normality"]}
-    assert normality["Adelie"]["normal"] is False
-    assert normality["Adelie"]["shapiro_p"] == pytest.approx(0.03, abs=0.015)
-    assert result["assumptions"]["levene_p"] == pytest.approx(0.006, abs=0.002)
-    assert result["assumptions"]["equal_variance"] is False
     assert result["test"] == "Kruskal-Wallis"
-    assert "Adelie" in result["test_reason"]
-
     assert result["statistic"] == pytest.approx(217.6, abs=0.1)
     assert result["p_value"] < 1e-40
     assert result["significant"] is True
@@ -132,13 +105,6 @@ def test_penguins_body_mass_by_species_known_answer(penguins):
 
     medians = {group["name"]: group["median"] for group in result["groups"]}
     assert medians == {"Adelie": 3700, "Chinstrap": 3700, "Gentoo": 5000}
-
-    # Gentoo is the heavy species; Adelie and Chinstrap are indistinguishable.
-    pairs = {(pair["group_a"], pair["group_b"]): pair["significant"] for pair in result["pairwise"]}
-    assert pairs[("Adelie", "Gentoo")] is True
-    assert pairs[("Chinstrap", "Gentoo")] is True
-    assert pairs[("Adelie", "Chinstrap")] is False
-    assert medians["Gentoo"] > medians["Adelie"]
 
 
 # guards: bad input gives a status, never an exception
@@ -176,7 +142,6 @@ def test_tips_day_by_time_known_answer(tips):
     assert result["p_value"] < 1e-40
     assert result["dof"] == 3
     assert result["significant"] is True
-    assert result["cramers_v"] == pytest.approx(0.94, abs=0.01)
 
     # The heatmap data: weekends are dinner-only.
     table = result["contingency"]
@@ -195,7 +160,6 @@ def test_independent_categories_are_not_significant():
 
     assert result["status"] == "ok"
     assert result["significant"] is False
-    assert result["cramers_v"] < 0.2
 
 
 def test_chi_square_with_one_category_is_insufficient_data():
@@ -227,16 +191,14 @@ def test_analyze_rejects_same_column_twice(tips):
     assert engine.analyze(tips, "day", "day")["status"] == "invalid_columns"
 
 
-# correlation
+# regression
 
 def test_penguins_flipper_vs_body_mass_known_answer(penguins):
-    result = engine.run_correlation(penguins, "flipper_length_mm", "body_mass_g")
+    result = engine.run_regression(penguins, "flipper_length_mm", "body_mass_g")
 
     assert result["status"] == "ok"
-    assert result["pearson_r"] == pytest.approx(0.87, abs=0.01)
-    assert result["spearman_rho"] == pytest.approx(0.84, abs=0.01)
     # 49.69 g per mm, using all 342 rows that have both measurements. (Dropping
-    # rows with ANY missing value, e.g. sex, leaves 333 rows and gives ~50.2.)
+    # rows with any missing value, e.g. sex, leaves 333 rows and gives ~50.2.)
     assert result["slope"] == pytest.approx(49.69, abs=0.05)
     assert result["r_squared"] == pytest.approx(0.76, abs=0.01)
     assert result["significant"] is True
@@ -244,32 +206,41 @@ def test_penguins_flipper_vs_body_mass_known_answer(penguins):
     assert len(result["points"]) == result["n"] == 342
 
 
-def test_unrelated_numbers_are_not_correlated():
+def test_unrelated_numbers_have_no_significant_fit():
     rng = np.random.default_rng(5)
     df = pd.DataFrame({"x": rng.normal(0, 1, 200), "y": rng.normal(0, 1, 200)})
-    result = engine.run_correlation(df, "x", "y")
+    result = engine.run_regression(df, "x", "y")
 
     assert result["significant"] is False
-    assert abs(result["pearson_r"]) < 0.2
+    assert result["r_squared"] < 0.05
 
 
-def test_large_dataset_is_downsampled_for_plotting_only():
+def test_negative_slope_is_reported():
+    x = np.linspace(0, 10, 50)
+    df = pd.DataFrame({"x": x, "y": -2 * x + 5})
+    result = engine.run_regression(df, "x", "y")
+
+    assert result["direction"] == "negative"
+    assert result["slope"] == pytest.approx(-2, abs=0.01)
+
+
+def test_large_dataset_is_capped_for_plotting_only():
     rng = np.random.default_rng(6)
     x = rng.normal(0, 1, 2000)
     df = pd.DataFrame({"x": x, "y": 3 * x + rng.normal(0, 0.1, 2000)})
-    result = engine.run_correlation(df, "x", "y")
+    result = engine.run_regression(df, "x", "y")
 
-    assert result["n"] == 2000                   # statistics use every row
+    assert result["n"] == 2000                   # the fit uses every row
     assert len(result["points"]) == 500          # the scatter plot does not
     assert result["slope"] == pytest.approx(3, abs=0.05)
 
 
-def test_constant_column_correlation_is_insufficient_data():
+def test_constant_column_regression_is_insufficient_data():
     df = pd.DataFrame({"x": [1.0, 2.0, 3.0, 4.0], "y": [5.0] * 4})
-    result = engine.run_correlation(df, "x", "y")
+    result = engine.run_regression(df, "x", "y")
     assert result["status"] == "insufficient_data"
 
 
-def test_analyze_routes_two_numerics_to_correlation(penguins):
+def test_analyze_routes_two_numerics_to_regression(penguins):
     result = engine.analyze(penguins, "flipper_length_mm", "body_mass_g")
-    assert result["analysis"] == "correlation"
+    assert result["analysis"] == "regression"

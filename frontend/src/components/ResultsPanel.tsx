@@ -1,6 +1,6 @@
 import type { AnalyzeResponse } from '../types'
 import { ChiSquareView } from './ChiSquareView'
-import { CorrelationView } from './CorrelationView'
+import { RegressionView } from './RegressionView'
 import { GroupComparisonView } from './GroupComparisonView'
 
 interface ResultsPanelProps {
@@ -19,6 +19,6 @@ export function ResultsPanel({ result }: ResultsPanelProps) {
   }
 
   if (result.analysis === 'chi_square') return <ChiSquareView result={result} />
-  if (result.analysis === 'correlation') return <CorrelationView result={result} />
+  if (result.analysis === 'regression') return <RegressionView result={result} />
   return <GroupComparisonView result={result} />
 }

@@ -26,7 +26,7 @@ export function describePair(a: ColumnOption | undefined, b: ColumnOption | unde
   if (a.name === b.name) return 'Pick two different columns.'
 
   const pair = `${a.kind} × ${b.kind}`
-  if (a.kind === 'numeric' && b.kind === 'numeric') return `${pair} → correlation + linear regression`
+  if (a.kind === 'numeric' && b.kind === 'numeric') return `${pair} → linear regression`
   if (a.kind === 'categorical' && b.kind === 'categorical') return `${pair} → chi-square test of independence`
-  return `${pair} → group comparison (ANOVA or Kruskal-Wallis, chosen by assumption checks)`
+  return `${pair} → group comparison (Kruskal-Wallis)`
 }

@@ -1,10 +1,10 @@
 import type { Data } from 'plotly.js'
 import { baseLayout, CHART_COLORS } from '../chartStyle'
-import type { CorrelationResult } from '../types'
+import type { RegressionResult } from '../types'
 import { Plot } from './Plot'
 
 interface ScatterChartProps {
-  result: CorrelationResult
+  result: RegressionResult
 }
 
 export function ScatterChart({ result }: ScatterChartProps) {

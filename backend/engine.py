@@ -6,7 +6,6 @@ No FastAPI imports here, so it can be tested without a server.
 from pathlib import Path
 
 import pandas as pd
-import scikit_posthocs
 from scipy import stats
 
 DATA_DIR = Path(__file__).parent / "data"
@@ -21,8 +20,10 @@ MAX_NUMERIC_CATEGORIES = 10
 # More groups than this and the comparison stops being readable.
 MAX_GROUPS = 20
 
-# Shapiro-Wilk needs n >= 3.
 MIN_GROUP_SIZE = 3
+
+# Cap on the points sent to the browser for the scatter plot.
+MAX_SCATTER_POINTS = 500
 
 
 def list_builtin_datasets() -> list[str]:
@@ -96,86 +97,12 @@ def summarize_group(name: str, values: pd.Series) -> dict:
     }
 
 
-def dunn_pairwise(clean: pd.DataFrame, value_col: str, group_col: str) -> list[dict]:
-    """Post-hoc for Kruskal-Wallis: which specific pairs of groups differ."""
-    # Bonferroni corrects for the number of pairs being tested at once.
-    matrix = scikit_posthocs.posthoc_dunn(
-        clean, val_col=value_col, group_col=group_col, p_adjust="bonferroni"
-    )
-
-    # The matrix is symmetric, so only walk the upper triangle.
-    names = list(matrix.index)
-    pairs = []
-    for i in range(len(names)):
-        for j in range(i + 1, len(names)):
-            p_value = float(matrix.iloc[i, j])
-            pairs.append({
-                "group_a": str(names[i]),
-                "group_b": str(names[j]),
-                "p_value": p_value,
-                "significant": p_value < ALPHA,
-            })
-    return pairs
-
-
-def tukey_pairwise(group_names: list, groups: list[pd.Series]) -> list[dict]:
-    """Post-hoc for ANOVA. Tukey adjusts for multiple comparisons itself."""
-    p_values = stats.tukey_hsd(*groups).pvalue
-
-    pairs = []
-    for i in range(len(group_names)):
-        for j in range(i + 1, len(group_names)):
-            p_value = float(p_values[i][j])
-            pairs.append({
-                "group_a": str(group_names[i]),
-                "group_b": str(group_names[j]),
-                "p_value": p_value,
-                "significant": p_value < ALPHA,
-            })
-    return pairs
-
-
-def check_assumptions(group_names: list, groups: list[pd.Series]) -> dict:
-    """Test the two things ANOVA needs: normal groups and equal variances."""
-    # Both tests have a null of "the assumption holds", so p > alpha passes.
-    normality = []
-    for name, values in zip(group_names, groups):
-        shapiro_p = float(stats.shapiro(values).pvalue)
-        normality.append({
-            "group": str(name),
-            "shapiro_p": shapiro_p,
-            "normal": shapiro_p > ALPHA,
-        })
-
-    levene_p = float(stats.levene(*groups).pvalue)
-
-    return {
-        "normality": normality,
-        "levene_p": levene_p,
-        "equal_variance": levene_p > ALPHA,
-    }
-
-
-def explain_test_choice(assumptions: dict) -> str:
-    """Build the sentence shown in the UI explaining the chosen test."""
-    non_normal = [item["group"] for item in assumptions["normality"] if not item["normal"]]
-
-    if not non_normal and assumptions["equal_variance"]:
-        return (
-            "All groups look normally distributed (Shapiro-Wilk p > 0.05) and have similar "
-            "variances (Levene p > 0.05), so one-way ANOVA is appropriate."
-        )
-
-    reasons = []
-    if non_normal:
-        reasons.append(f"data is non-normal in {', '.join(non_normal)} (Shapiro-Wilk p < 0.05)")
-    if not assumptions["equal_variance"]:
-        reasons.append("group variances are unequal (Levene p < 0.05)")
-    return f"ANOVA's assumptions don't hold: {' and '.join(reasons)}, so the non-parametric Kruskal-Wallis test was used."
-
-
 def run_group_comparison(df: pd.DataFrame, value_col: str, group_col: str) -> dict:
-    """Compare a numeric column across the groups of a categorical column."""
+    """Compare a numeric column across the groups of a categorical column.
+
+    Uses Kruskal-Wallis, which compares groups without assuming the values
+    follow a normal distribution.
+    """
     analysis = "group_comparison"
 
     missing = missing_columns(df, [value_col, group_col])
@@ -200,58 +127,21 @@ def run_group_comparison(df: pd.DataFrame, value_col: str, group_col: str) -> di
     if clean[value_col].nunique() < 2:
         return problem(analysis, "insufficient_data", f"Every value of '{value_col}' is identical, so there is nothing to compare.")
 
-    assumptions = check_assumptions(group_names, groups)
-    all_normal = all(item["normal"] for item in assumptions["normality"])
-    use_anova = all_normal and assumptions["equal_variance"]
-
-    if use_anova:
-        test = "ANOVA"
-        statistic, p_value = stats.f_oneway(*groups)
-    else:
-        test = "Kruskal-Wallis"
-        statistic, p_value = stats.kruskal(*groups)
-
-    significant = bool(p_value < ALPHA)
-
-    # Only look for which pairs differ once the overall test says some pair does.
-    pairwise = []
-    posthoc_test = None
-    if significant and use_anova:
-        posthoc_test = "Tukey HSD"
-        pairwise = tukey_pairwise(group_names, groups)
-    elif significant:
-        posthoc_test = "Dunn (Bonferroni-adjusted)"
-        pairwise = dunn_pairwise(clean, value_col, group_col)
+    statistic, p_value = stats.kruskal(*groups)
 
     return {
         "status": "ok",
         "analysis": analysis,
         "value_col": value_col,
         "group_col": group_col,
-        "test": test,
-        "test_reason": explain_test_choice(assumptions),
-        "assumptions": assumptions,
+        "test": "Kruskal-Wallis",
         "statistic": float(statistic),
         "p_value": float(p_value),
-        "significant": significant,
-        "posthoc_test": posthoc_test,
+        "significant": bool(p_value < ALPHA),
         "group_count": len(groups),
         "n": int(len(clean)),
-        "pairwise": pairwise,
         "groups": [summarize_group(str(name), values) for name, values in zip(group_names, groups)],
     }
-
-
-def describe_strength(value: float) -> str:
-    """Cohen's rule-of-thumb labels for a 0-1 effect size."""
-    size = abs(value)
-    if size < 0.1:
-        return "negligible"
-    if size < 0.3:
-        return "weak"
-    if size < 0.5:
-        return "moderate"
-    return "strong"
 
 
 def run_chi_square(df: pd.DataFrame, col_a: str, col_b: str) -> dict:
@@ -274,13 +164,6 @@ def run_chi_square(df: pd.DataFrame, col_a: str, col_b: str) -> dict:
 
     chi2, p_value, dof, expected = stats.chi2_contingency(contingency)
 
-    # Effect size, since a large n makes even a trivial association significant.
-    n = int(contingency.to_numpy().sum())
-    cramers_v = float((chi2 / (n * (min(contingency.shape) - 1))) ** 0.5)
-
-    # Chi-square gets unreliable when expected counts are small.
-    low_expected_share = float((expected < 5).mean())
-
     return {
         "status": "ok",
         "analysis": analysis,
@@ -291,10 +174,7 @@ def run_chi_square(df: pd.DataFrame, col_a: str, col_b: str) -> dict:
         "p_value": float(p_value),
         "dof": int(dof),
         "significant": bool(p_value < ALPHA),
-        "cramers_v": cramers_v,
-        "strength": describe_strength(cramers_v),
-        "n": n,
-        "low_expected_warning": low_expected_share > 0.2,
+        "n": int(contingency.to_numpy().sum()),
         "contingency": {
             "rows": [str(label) for label in contingency.index],
             "cols": [str(label) for label in contingency.columns],
@@ -304,13 +184,9 @@ def run_chi_square(df: pd.DataFrame, col_a: str, col_b: str) -> dict:
     }
 
 
-# Points beyond this are sampled down for the scatter plot only.
-MAX_SCATTER_POINTS = 500
-
-
-def run_correlation(df: pd.DataFrame, col_a: str, col_b: str) -> dict:
-    """Correlate two numeric columns and fit a line. col_a is x, col_b is y."""
-    analysis = "correlation"
+def run_regression(df: pd.DataFrame, col_a: str, col_b: str) -> dict:
+    """Fit a line through two numeric columns. col_a is x, col_b is y."""
+    analysis = "regression"
 
     missing = missing_columns(df, [col_a, col_b])
     if missing:
@@ -326,17 +202,11 @@ def run_correlation(df: pd.DataFrame, col_a: str, col_b: str) -> dict:
     if len(clean) < MIN_GROUP_SIZE:
         return problem(analysis, "insufficient_data", f"Need at least {MIN_GROUP_SIZE} rows with both values present (found {len(clean)}).")
     if x.nunique() < 2 or y.nunique() < 2:
-        return problem(analysis, "insufficient_data", "A column with a single constant value can't be correlated with anything.")
-
-    pearson_r, pearson_p = stats.pearsonr(x, y)
-
-    # Spearman runs on ranks, so a big gap from Pearson points to a
-    # non-linear or outlier-driven relationship.
-    spearman_rho, spearman_p = stats.spearmanr(x, y)
+        return problem(analysis, "insufficient_data", "A column with a single constant value can't be fitted.")
 
     regression = stats.linregress(x, y)
 
-    # Statistics above use every row; only the plot is downsampled.
+    # The fit uses every row; only the plot is capped.
     plotted = clean
     if len(clean) > MAX_SCATTER_POINTS:
         plotted = clean.sample(n=MAX_SCATTER_POINTS, random_state=0)
@@ -347,16 +217,13 @@ def run_correlation(df: pd.DataFrame, col_a: str, col_b: str) -> dict:
         "analysis": analysis,
         "col_a": col_a,
         "col_b": col_b,
-        "pearson_r": float(pearson_r),
-        "pearson_p": float(pearson_p),
-        "spearman_rho": float(spearman_rho),
-        "spearman_p": float(spearman_p),
+        "test": "Linear regression",
         "slope": float(regression.slope),
         "intercept": float(regression.intercept),
         "r_squared": float(regression.rvalue ** 2),
-        "significant": bool(pearson_p < ALPHA),
-        "strength": describe_strength(pearson_r),
-        "direction": "positive" if pearson_r > 0 else "negative",
+        "p_value": float(regression.pvalue),
+        "significant": bool(regression.pvalue < ALPHA),
+        "direction": "positive" if regression.slope > 0 else "negative",
         "n": int(len(clean)),
         "points": points,
     }
@@ -390,4 +257,4 @@ def analyze(df: pd.DataFrame, col_a: str, col_b: str) -> dict:
     if kind_a == "categorical" and kind_b == "categorical":
         return run_chi_square(df, col_a, col_b)
 
-    return run_correlation(df, col_a, col_b)
+    return run_regression(df, col_a, col_b)

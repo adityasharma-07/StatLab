@@ -4,24 +4,30 @@ A web app for exploring a dataset two columns at a time. You pick a dataset and
 two columns, and it chooses the statistical test that fits those column types,
 runs it, and plots the result.
 
-The point is the test selection. For comparing a numeric column across groups it
-checks ANOVA's assumptions first (normality per group, equal variances) and falls
-back to Kruskal-Wallis when they fail, then shows which check decided it.
+It profiles the columns first, so it knows which are numeric and which work as
+groups, and uses that to decide what to run and how to plot it.
 
 ![Group comparison](docs/screenshot-group-comparison.png)
 
 ## What it runs
 
-| Columns | Test | Chart |
+| Columns | Analysis | Chart |
 |---|---|---|
-| numeric + categorical | ANOVA with Tukey HSD, or Kruskal-Wallis with Dunn's test | box plot per group |
-| categorical + categorical | chi-square test of independence, Cramer's V | contingency heatmap |
-| numeric + numeric | Pearson and Spearman correlation, linear regression | scatter plot with fit line |
+| numeric + categorical | Kruskal-Wallis | box plot per group |
+| categorical + categorical | chi-square test of independence | contingency heatmap |
+| numeric + numeric | linear regression | scatter plot with fit line |
+
+Kruskal-Wallis compares groups by rank, so it works without assuming the values
+are normally distributed.
 
 A numeric column with 10 or fewer distinct values counts as categorical, so
 something like party size in the tips dataset groups properly.
 
 Two datasets are bundled (penguins and tips) and you can upload your own CSV.
+
+| Chi-square | Regression |
+|---|---|
+| ![Chi-square heatmap](docs/screenshot-chi-square.png) | ![Regression scatter plot](docs/screenshot-regression.png) |
 
 ## Components
 
@@ -73,9 +79,9 @@ pytest
 ```
 
 31 tests. The engine is tested on synthetic data where the answer is known
-(clearly separated groups, identical groups, normal data that should pick ANOVA,
-skewed data that should pick Kruskal-Wallis) and against published values for the
-bundled datasets. The API tests cover the full round trip including CSV upload.
+(clearly separated groups, identical groups, a known slope) and against published
+values for the bundled datasets. The API tests cover the full round trip
+including CSV upload.
 
 ## Data
 

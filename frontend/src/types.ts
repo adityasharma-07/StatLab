@@ -50,40 +50,17 @@ export interface GroupSummary {
   max: number
 }
 
-export interface PairwiseResult {
-  group_a: string
-  group_b: string
-  p_value: number
-  significant: boolean
-}
-
-export interface NormalityCheck {
-  group: string
-  shapiro_p: number
-  normal: boolean
-}
-
-export interface Assumptions {
-  normality: NormalityCheck[]
-  levene_p: number
-  equal_variance: boolean
-}
-
 export interface GroupComparisonResult {
   status: 'ok'
   analysis: 'group_comparison'
   value_col: string
   group_col: string
-  test: 'ANOVA' | 'Kruskal-Wallis'
-  test_reason: string
-  assumptions: Assumptions
+  test: 'Kruskal-Wallis'
   statistic: number
   p_value: number
   significant: boolean
-  posthoc_test: string | null
   group_count: number
   n: number
-  pairwise: PairwiseResult[]
   groups: GroupSummary[]
 }
 
@@ -103,10 +80,7 @@ export interface ChiSquareResult {
   p_value: number
   dof: number
   significant: boolean
-  cramers_v: number
-  strength: string
   n: number
-  low_expected_warning: boolean
   contingency: ContingencyTable
   expected: number[][]
 }
@@ -116,24 +90,21 @@ export interface Point {
   y: number
 }
 
-export interface CorrelationResult {
+export interface RegressionResult {
   status: 'ok'
-  analysis: 'correlation'
+  analysis: 'regression'
   col_a: string // x axis
   col_b: string // y axis
-  pearson_r: number
-  pearson_p: number
-  spearman_rho: number
-  spearman_p: number
+  test: string
   slope: number
   intercept: number
   r_squared: number
+  p_value: number
   significant: boolean
-  strength: string
   direction: 'positive' | 'negative'
   n: number
   points: Point[]
 }
 
 // The "analysis" field says which of these came back.
-export type AnalyzeResponse = GroupComparisonResult | ChiSquareResult | CorrelationResult | AnalysisProblem
+export type AnalyzeResponse = GroupComparisonResult | ChiSquareResult | RegressionResult | AnalysisProblem

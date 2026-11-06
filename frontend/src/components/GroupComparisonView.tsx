@@ -1,8 +1,6 @@
 import { formatNumber, formatP } from '../format'
 import type { GroupComparisonResult } from '../types'
-import { AssumptionsPanel } from './AssumptionsPanel'
 import { BoxPlotChart } from './BoxPlotChart'
-import { PairwiseTable } from './PairwiseTable'
 import { Verdict } from './Verdict'
 
 interface GroupComparisonViewProps {
@@ -17,16 +15,28 @@ export function GroupComparisonView({ result }: GroupComparisonViewProps) {
     <>
       <Verdict significant={result.significant} headline={headline} detail={detail} />
 
-      <AssumptionsPanel result={result} />
-
       <BoxPlotChart result={result} />
 
-      {result.pairwise.length > 0 && (
-        <section>
-          <h3>Which groups differ: {result.posthoc_test}</h3>
-          <PairwiseTable pairs={result.pairwise} />
-        </section>
-      )}
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th>Group</th>
+            <th>n</th>
+            <th>Median</th>
+            <th>Mean</th>
+          </tr>
+        </thead>
+        <tbody>
+          {result.groups.map((group) => (
+            <tr key={group.name}>
+              <td>{group.name}</td>
+              <td className="number">{group.n}</td>
+              <td className="number">{formatNumber(group.median)}</td>
+              <td className="number">{formatNumber(group.mean)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </>
   )
 }

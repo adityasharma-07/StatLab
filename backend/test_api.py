@@ -47,11 +47,11 @@ def test_analyze_dispatches_by_column_type():
     assert chi["analysis"] == "chi_square"
     assert chi["dof"] == 3
 
-    correlation = client.post(
+    regression = client.post(
         "/api/analyze", json={"dataset": "penguins", "col_a": "flipper_length_mm", "col_b": "body_mass_g"}
     ).json()
-    assert correlation["analysis"] == "correlation"
-    assert correlation["r_squared"] > 0.7
+    assert regression["analysis"] == "regression"
+    assert regression["r_squared"] > 0.7
 
 
 def test_upload_then_analyze_round_trip():

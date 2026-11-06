@@ -53,40 +53,17 @@ class GroupSummary(BaseModel):
     max: float
 
 
-class PairwiseResult(BaseModel):
-    group_a: str
-    group_b: str
-    p_value: float
-    significant: bool
-
-
-class NormalityCheck(BaseModel):
-    group: str
-    shapiro_p: float
-    normal: bool
-
-
-class Assumptions(BaseModel):
-    normality: list[NormalityCheck]
-    levene_p: float
-    equal_variance: bool
-
-
 class GroupComparisonResult(BaseModel):
     status: Literal["ok"]
     analysis: Literal["group_comparison"]
     value_col: str
     group_col: str
-    test: Literal["ANOVA", "Kruskal-Wallis"]
-    test_reason: str
-    assumptions: Assumptions
+    test: Literal["Kruskal-Wallis"]
     statistic: float
     p_value: float
     significant: bool
-    posthoc_test: str | None
     group_count: int
     n: int
-    pairwise: list[PairwiseResult]
     groups: list[GroupSummary]
 
 
@@ -106,10 +83,7 @@ class ChiSquareResult(BaseModel):
     p_value: float
     dof: int
     significant: bool
-    cramers_v: float
-    strength: str
     n: int
-    low_expected_warning: bool
     contingency: ContingencyTable
     expected: list[list[float]]
 
@@ -119,24 +93,21 @@ class Point(BaseModel):
     y: float
 
 
-class CorrelationResult(BaseModel):
+class RegressionResult(BaseModel):
     status: Literal["ok"]
-    analysis: Literal["correlation"]
+    analysis: Literal["regression"]
     col_a: str  # x axis
     col_b: str  # y axis
-    pearson_r: float
-    pearson_p: float
-    spearman_rho: float
-    spearman_p: float
+    test: str
     slope: float
     intercept: float
     r_squared: float
+    p_value: float
     significant: bool
-    strength: str
     direction: Literal["positive", "negative"]
     n: int
     points: list[Point]
 
 
 # The "analysis" field tells the frontend which of these it received.
-AnalyzeResponse = GroupComparisonResult | ChiSquareResult | CorrelationResult | AnalysisProblem
+AnalyzeResponse = GroupComparisonResult | ChiSquareResult | RegressionResult | AnalysisProblem
